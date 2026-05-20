@@ -139,7 +139,7 @@ func (s *Server) handleConn(raw net.Conn) {
 		return
 	}
 
-	resp, err := s.svc.Enroll(ctx, hello.EnrollmentID, req)
+	resp, err := s.svc.Enroll(ctx, hello.EnrollmentID, row.AgentID, req)
 	if err != nil {
 		slog.Warn("Agent enrollment 실패", "enrollment_id", hello.EnrollmentID, "hostname", req.Hostname, "err", err)
 		s.writeError(conn, reqHdr.seqNum, err.Error())

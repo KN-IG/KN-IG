@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS agent_certificates (
     expires_at        DATETIME     DEFAULT NULL,
     bound_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     revoked_at        DATETIME     DEFAULT NULL,
-    UNIQUE KEY uq_agent_cert_subject_hash (cert_subject_hash),
+    KEY idx_agent_cert_subject_hash (cert_subject_hash),
     UNIQUE KEY uq_agent_cert_fingerprint (cert_fingerprint),
     KEY idx_agent_certificates_agent_status (agent_id, status),
     CONSTRAINT fk_agent_certificates_agent

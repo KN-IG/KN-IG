@@ -92,7 +92,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Agent CA 인증서 로드 실패: %v", err)
 		}
-		enrollSvc := enrollment.NewService(agentStore, enrollmentStore, issuer, caPEM)
+		enrollSvc := enrollment.NewService(enrollmentStore, issuer, caPEM)
 		enrollServer := enrollment.NewServer(enrollAddr, enrollSvc, enrollmentStore, keyVault, pepper)
 
 		go func() {

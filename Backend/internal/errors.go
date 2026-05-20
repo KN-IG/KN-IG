@@ -13,5 +13,6 @@ var (
 	ErrEnrollmentExpired        = errors.New("enrollment expired")
 	ErrEnrollmentUsed           = errors.New("enrollment already used")
 	ErrEnrollmentSecretMismatch = errors.New("enrollment secret mismatch")
+	ErrEnrollmentAgentMismatch  = errors.New("enrollment agent mismatch")
 	ErrEnrollmentRevoked        = errors.New("enrollment revoked")
 )

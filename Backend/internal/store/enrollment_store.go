@@ -66,7 +66,7 @@ func (s *MySQLEnrollmentStore) GetPendingEnrollment(ctx context.Context, enrollm
 
 	switch row.Status {
 	case "pending":
-	case "used", "issued":
+	case "issuing", "used", "issued":
 		return internal.Enrollment{}, internal.ErrEnrollmentUsed
 	case "revoked":
 		return internal.Enrollment{}, internal.ErrEnrollmentRevoked
@@ -91,13 +91,13 @@ func (s *MySQLEnrollmentStore) GetPendingEnrollment(ctx context.Context, enrollm
 	return row, nil
 }
 
-// MarkEnrollmentIssued : Backend가 Agent cert/key 응답을 생성한 뒤 재사용을 막는다.
-func (s *MySQLEnrollmentStore) MarkEnrollmentIssued(ctx context.Context, enrollmentID string, agentID string, now time.Time) error {
+// ClaimEnrollment : pending enrollment를 issuing으로 원자적으로 전환해 동시 발급을 막는다.
+func (s *MySQLEnrollmentStore) ClaimEnrollment(ctx context.Context, enrollmentID string, agentID string, now time.Time) error {
 	query := `
 		UPDATE agent_enrollments
-		SET status = 'issued', issued_at = ?, agent_id = ?
+		SET status = 'issuing', agent_id = ?
 		WHERE enrollment_id = ? AND status = 'pending' AND expires_at > ?`
-	res, err := s.db.ExecContext(ctx, query, now, agentID, enrollmentID, now)
+	res, err := s.db.ExecContext(ctx, query, agentID, enrollmentID, now)
 	if err != nil {
 		return err
 	}
@@ -111,13 +111,63 @@ func (s *MySQLEnrollmentStore) MarkEnrollmentIssued(ctx context.Context, enrollm
 	return nil
 }
 
+// ReleaseEnrollmentClaim : 발급 side effect 실패 시 issuing claim을 pending으로 되돌린다.
+func (s *MySQLEnrollmentStore) ReleaseEnrollmentClaim(ctx context.Context, enrollmentID string, agentID string, keepAgentID bool) error {
+	query := `
+		UPDATE agent_enrollments
+		SET status = 'pending', agent_id = NULL
+		WHERE enrollment_id = ? AND status = 'issuing' AND agent_id = ?`
+	if keepAgentID {
+		query = `
+			UPDATE agent_enrollments
+			SET status = 'pending'
+			WHERE enrollment_id = ? AND status = 'issuing' AND agent_id = ?`
+	}
+	_, err := s.db.ExecContext(ctx, query, enrollmentID, agentID)
+	return err
+}
+
+// FinalizeEnrollmentIssue : Agent row, cert rotation, enrollment issued 상태 전환을 하나의 트랜잭션으로 확정한다.
+func (s *MySQLEnrollmentStore) FinalizeEnrollmentIssue(ctx context.Context, enrollmentID string, agentID string, payload internal.RegisterPayload, cert internal.AgentCertificate, now time.Time) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err := ensureAgentOfflineTx(ctx, tx, agentID, payload); err != nil {
+		return err
+	}
+	if err := rotateActiveCertificateTx(ctx, tx, agentID, cert); err != nil {
+		return err
+	}
+
+	query := `
+		UPDATE agent_enrollments
+		SET status = 'issued', issued_at = ?, agent_id = ?
+		WHERE enrollment_id = ? AND status = 'issuing' AND agent_id = ? AND expires_at > ?`
+	res, err := tx.ExecContext(ctx, query, now, agentID, enrollmentID, agentID, now)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return internal.ErrEnrollmentUsed
+	}
+
+	return tx.Commit()
+}
+
 // MarkEnrollmentUsed : Agent가 protected ACK를 보낸 뒤 완료 처리한다.
 func (s *MySQLEnrollmentStore) MarkEnrollmentUsed(ctx context.Context, enrollmentID string, agentID string, now time.Time) error {
 	query := `
 		UPDATE agent_enrollments
 		SET status = 'used', used_at = ?, agent_id = ?
-		WHERE enrollment_id = ? AND status IN ('issued', 'pending')`
-	res, err := s.db.ExecContext(ctx, query, now, agentID, enrollmentID)
+		WHERE enrollment_id = ? AND status = 'issued' AND agent_id = ?`
+	res, err := s.db.ExecContext(ctx, query, now, agentID, enrollmentID, agentID)
 	if err != nil {
 		return err
 	}

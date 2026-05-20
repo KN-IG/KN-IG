@@ -58,14 +58,13 @@ func (s *MySQLAgentStore) RegisterAgentWithCertificate(ctx context.Context, agen
 	if _, err := tx.ExecContext(ctx, query, agentID, p.Hostname, p.IP, p.OS, p.MonitorType); err != nil {
 		return err
 	}
-	if err := ensureActiveCertificateTx(ctx, tx, agentID, cert); err != nil {
+	if err := ensureMatchingCertificateTx(ctx, tx, agentID, cert); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-// EnsureAgent : enrollment 단계에서 FK용 Agent row를 만들되 online 상태로 표시하지 않는다.
-func (s *MySQLAgentStore) EnsureAgent(ctx context.Context, agentID string, p internal.RegisterPayload) error {
+func ensureAgentOfflineTx(ctx context.Context, tx *sql.Tx, agentID string, p internal.RegisterPayload) error {
 	query := `
 		INSERT INTO agents (agent_id, hostname, ip, version, os, monitor_type, status, registered_at, last_seen)
 		VALUES (?, ?, ?, '', ?, ?, 'offline', NOW(), NULL)
@@ -75,28 +74,13 @@ func (s *MySQLAgentStore) EnsureAgent(ctx context.Context, agentID string, p int
 			os = VALUES(os),
 			monitor_type = VALUES(monitor_type)`
 
-	_, err := s.db.ExecContext(ctx, query, agentID, p.Hostname, p.IP, p.OS, p.MonitorType)
+	_, err := tx.ExecContext(ctx, query, agentID, p.Hostname, p.IP, p.OS, p.MonitorType)
 	return err
 }
 
-// EnsureAgentCertificate : Agent에 active 인증서가 없으면 최초 binding하고, 있으면 fingerprint를 검증한다.
-func (s *MySQLAgentStore) EnsureAgentCertificate(ctx context.Context, agentID string, cert internal.AgentCertificate) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	if err := ensureActiveCertificateTx(ctx, tx, agentID, cert); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
-func ensureActiveCertificateTx(ctx context.Context, tx *sql.Tx, agentID string, cert internal.AgentCertificate) error {
+func ensureMatchingCertificateTx(ctx context.Context, tx *sql.Tx, agentID string, cert internal.AgentCertificate) error {
 	// Agent row를 잠가 동일 agent_id의 최초 인증서 binding 경쟁을 직렬화한다.
-	var lockedAgentID string
-	if err := tx.QueryRowContext(ctx, `SELECT agent_id FROM agents WHERE agent_id = ? FOR UPDATE`, agentID).Scan(&lockedAgentID); err != nil {
+	if err := lockAgentTx(ctx, tx, agentID); err != nil {
 		return err
 	}
 
@@ -133,6 +117,57 @@ func ensureActiveCertificateTx(ctx context.Context, tx *sql.Tx, agentID string, 
 	default:
 		return err
 	}
+}
+
+func rotateActiveCertificateTx(ctx context.Context, tx *sql.Tx, agentID string, cert internal.AgentCertificate) error {
+	if err := lockAgentTx(ctx, tx, agentID); err != nil {
+		return err
+	}
+
+	var storedSubjectHash string
+	var storedFingerprint string
+	query := `
+		SELECT cert_subject_hash, cert_fingerprint
+		FROM agent_certificates
+		WHERE agent_id = ? AND status = 'active'
+		ORDER BY bound_at DESC
+		LIMIT 1
+		FOR UPDATE`
+
+	err := tx.QueryRowContext(ctx, query, agentID).Scan(&storedSubjectHash, &storedFingerprint)
+	switch {
+	case err == nil:
+		if storedSubjectHash == cert.CertSubjectHash && storedFingerprint == cert.CertFingerprint {
+			return nil
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE agent_certificates
+			SET status = 'revoked', revoked_at = NOW()
+			WHERE agent_id = ? AND status = 'active'`, agentID); err != nil {
+			return err
+		}
+	case errors.Is(err, sql.ErrNoRows):
+	default:
+		return err
+	}
+
+	insert := `
+		INSERT INTO agent_certificates
+			(agent_id, cert_subject_hash, cert_fingerprint, status, issued_at, expires_at, bound_at)
+		VALUES (?, ?, ?, 'active', ?, ?, NOW())`
+	_, err = tx.ExecContext(ctx, insert,
+		agentID,
+		cert.CertSubjectHash,
+		cert.CertFingerprint,
+		nullTime(cert.IssuedAt),
+		nullTime(cert.ExpiresAt),
+	)
+	return err
+}
+
+func lockAgentTx(ctx context.Context, tx *sql.Tx, agentID string) error {
+	var lockedAgentID string
+	return tx.QueryRowContext(ctx, `SELECT agent_id FROM agents WHERE agent_id = ? FOR UPDATE`, agentID).Scan(&lockedAgentID)
 }
 
 func nullTime(t time.Time) any {

@@ -95,10 +95,6 @@ type AgentStore interface {
 	RegisterAgent(ctx context.Context, agentID string, payload RegisterPayload) error
 	// RegisterAgentWithCertificate : REGISTER 수신 -> Agent 저장 + 인증서 binding 검증/최초 저장
 	RegisterAgentWithCertificate(ctx context.Context, agentID string, payload RegisterPayload, cert AgentCertificate) error
-	// EnsureAgent : enrollment 단계에서 Agent row를 offline 상태로 사전 생성/갱신
-	EnsureAgent(ctx context.Context, agentID string, payload RegisterPayload) error
-	// EnsureAgentCertificate : enrollment 단계에서 발급 인증서를 Agent에 최초 binding
-	EnsureAgentCertificate(ctx context.Context, agentID string, cert AgentCertificate) error
 	// UpdateHeartbeat : 0x02 HEARTBEAT 수신 -> last_seen 갱신
 	UpdateHeartbeat(ctx context.Context, agentID string, t time.Time) error
 	// SetOffline : TCP 연결 종료 -> status offline
@@ -130,7 +126,9 @@ type Enrollment struct {
 type EnrollmentStore interface {
 	CreateEnrollment(ctx context.Context, enrollment Enrollment) error
 	GetPendingEnrollment(ctx context.Context, enrollmentID string, now time.Time) (Enrollment, error)
-	MarkEnrollmentIssued(ctx context.Context, enrollmentID string, agentID string, now time.Time) error
+	ClaimEnrollment(ctx context.Context, enrollmentID string, agentID string, now time.Time) error
+	ReleaseEnrollmentClaim(ctx context.Context, enrollmentID string, agentID string, keepAgentID bool) error
+	FinalizeEnrollmentIssue(ctx context.Context, enrollmentID string, agentID string, payload RegisterPayload, cert AgentCertificate, now time.Time) error
 	MarkEnrollmentUsed(ctx context.Context, enrollmentID string, agentID string, now time.Time) error
 }
 
