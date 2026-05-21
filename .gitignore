@@ -14,6 +14,10 @@ bin/
 .env.*
 !.env.example
 
+# KN-IG 클러스터 설정(비밀: DB 비번/API 키/IP) — 예시만 추적
+deploy/cluster.env
+cluster.env
+
 # IDE
 .idea/
 .vscode/
