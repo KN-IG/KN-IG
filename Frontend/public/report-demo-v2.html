@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KN-IG · 무결성 보안 리포트</title>
+<link rel="icon" type="image/png" href="assets/images/kn.png">
+
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+
+<style>
+/* ============================== TOKENS ============================== */
+:root {
+  --bg:#f5f5f7; --surface:#ffffff; --surface-2:#f5f5f7;
+  --ink:#1d1d1f; --ink-2:#1d1d1f; --ink-soft:#6e6e73; --ink-faint:#86868b;
+  --line:#d2d2d7; --line-soft:#e8e8ed;
+  --blue:#0071e3; --blue-dark:#1d4ed8; --blue-wash:#e8f1fd;
+  --crit:#ff3b30; --crit-wash:#ffece9;
+  --high:#ff9500; --high-wash:#fff3e3;
+  --med:#007aff;  --med-wash:#e7f1ff;
+  --low:#34c759;  --low-wash:#e6f8ec;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.04), 0 2px 8px rgba(0,0,0,.03);
+  --shadow-md:0 12px 40px -10px rgba(0,0,0,.14);
+  --r-card:18px; --r-btn:980px;
+  --glass-bg:rgba(255,255,255,.6); --glass-border:rgba(255,255,255,.55); --glass-blur:20px; --glass-hi:rgba(255,255,255,.7);
+  --sans: -apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo", "Segoe UI", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  --maxw:1024px;
+}
+[data-theme="dark"] {
+  --bg:#000000; --surface:#1c1c1e; --surface-2:#2c2c2e;
+  --ink:#f5f5f7; --ink-2:#f5f5f7; --ink-soft:#a1a1a6; --ink-faint:#86868b;
+  --line:#38383a; --line-soft:#2c2c2e;
+  --blue:#0a84ff; --blue-dark:#409cff; --blue-wash:rgba(10,132,255,.16);
+  --crit:#ff453a; --crit-wash:rgba(255,69,58,.16);
+  --high:#ff9f0a; --high-wash:rgba(255,159,10,.16);
+  --med:#0a84ff;  --med-wash:rgba(10,132,255,.16);
+  --low:#30d158;  --low-wash:rgba(48,209,88,.16);
+  --shadow-sm:0 1px 2px rgba(0,0,0,.4);
+  --shadow-md:0 12px 40px -10px rgba(0,0,0,.6);
+  --glass-bg:rgba(40,40,46,.55); --glass-border:rgba(255,255,255,.12); --glass-blur:22px; --glass-hi:rgba(255,255,255,.08);
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+html { scroll-behavior:smooth; }
+body { font-family:var(--sans); background:var(--bg); color:var(--ink); line-height:1.6; -webkit-font-smoothing:antialiased; transition:background .3s,color .3s; position:relative; }
+body::before { content:""; position:fixed; inset:0; z-index:-1; pointer-events:none;
+  background:
+    radial-gradient(60vw 50vh at 12% -6%, rgba(0,113,227,.16), transparent 60%),
+    radial-gradient(55vw 45vh at 92% 4%, rgba(120,80,255,.14), transparent 60%),
+    radial-gradient(60vw 55vh at 78% 96%, rgba(0,199,190,.13), transparent 60%),
+    radial-gradient(50vw 45vh at 4% 92%, rgba(255,120,80,.10), transparent 60%); }
+[data-theme="dark"] body::before {
+  background:
+    radial-gradient(60vw 50vh at 12% -6%, rgba(10,132,255,.22), transparent 60%),
+    radial-gradient(55vw 45vh at 92% 4%, rgba(140,90,255,.20), transparent 60%),
+    radial-gradient(60vw 55vh at 78% 96%, rgba(0,210,190,.16), transparent 60%); }
+::selection { background:var(--blue); color:#fff; }
+.num { font-variant-numeric:tabular-nums; font-feature-settings:"tnum"; }
+#progress { position:fixed; top:0; left:0; height:2px; width:0%; background:var(--blue); z-index:90; transition:width .1s linear; }
+
+/* ===== TOPBAR ===== */
+.topbar { position:sticky; top:0; z-index:80; display:flex; align-items:center; justify-content:space-between; padding:13px clamp(16px,4vw,40px); background:color-mix(in srgb,var(--bg) 72%,transparent); backdrop-filter:saturate(180%) blur(20px); -webkit-backdrop-filter:saturate(180%) blur(20px); border-bottom:1px solid transparent; transition:border-color .2s; }
+.topbar.scrolled { border-bottom-color:var(--line-soft); }
+.brand { display:flex; align-items:center; gap:10px; font-weight:600; font-size:16px; letter-spacing:-.01em; }
+.brand .mark { width:30px; height:30px; border-radius:8px; background:#fff; overflow:hidden; display:grid; place-items:center; box-shadow:var(--shadow-sm), inset 0 0 0 1px var(--line-soft); }
+.brand .mark img { width:100%; height:100%; object-fit:cover; display:block; }
+.brand small { display:block; color:var(--ink-faint); font-weight:400; font-size:11px; margin-top:-1px; }
+.topbar-actions { display:flex; gap:8px; align-items:center; }
+.btn { font-family:var(--sans); font-size:13.5px; font-weight:500; border:1px solid var(--line); background:var(--surface); color:var(--ink-2); padding:9px 18px; border-radius:var(--r-btn); cursor:pointer; display:inline-flex; align-items:center; gap:7px; transition:background .15s,color .15s,border-color .15s,transform .1s; }
+.btn:hover { border-color:var(--blue); color:var(--blue); }
+.btn:active { transform:scale(.98); }
+.btn-primary { background:var(--blue); color:#fff; border-color:var(--blue); }
+.btn-primary:hover { background:var(--blue-dark); border-color:var(--blue-dark); color:#fff; }
+.btn svg { width:15px; height:15px; }
+.wrap { max-width:var(--maxw); margin:0 auto; padding:0 clamp(16px,4vw,40px) 90px; }
+
+/* ===== HERO ===== */
+.hero { padding:64px 0 12px; }
+.kicker { font-size:15px; font-weight:600; color:var(--blue); margin-bottom:14px; letter-spacing:-.01em; }
+.hero h1 { font-size:clamp(32px,6vw,52px); font-weight:700; line-height:1.08; letter-spacing:-.035em; margin-bottom:20px; max-width:18ch; }
+.hero h1 b { color:var(--blue); font-weight:700; }
+.hero .lede { font-size:clamp(17px,2.2vw,21px); color:var(--ink-soft); max-width:62ch; line-height:1.5; font-weight:400; }
+.hero-meta { display:flex; flex-wrap:wrap; gap:8px; margin-top:28px; }
+.chip { display:inline-flex; align-items:center; gap:8px; background:var(--glass-bg); -webkit-backdrop-filter:saturate(180%) blur(var(--glass-blur)); backdrop-filter:saturate(180%) blur(var(--glass-blur)); border:1px solid var(--glass-border); border-radius:980px; padding:8px 15px; font-size:13px; font-weight:500; color:var(--ink-2); box-shadow:var(--shadow-sm), inset 0 1px 0 var(--glass-hi); }
+.chip .lab { color:var(--ink-faint); font-weight:400; }
+.chip .dot { width:7px; height:7px; border-radius:50%; }
+.chip.sev { background:var(--crit-wash); border-color:transparent; color:var(--crit); box-shadow:none; }
+
+/* ===== RANGE ===== */
+.range-bar { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-top:28px; padding:10px 12px; background:var(--glass-bg); -webkit-backdrop-filter:saturate(180%) blur(var(--glass-blur)); backdrop-filter:saturate(180%) blur(var(--glass-blur)); border:1px solid var(--glass-border); border-radius:var(--r-card); box-shadow:var(--shadow-md), inset 0 1px 0 var(--glass-hi); }
+.seg { display:inline-flex; background:var(--surface-2); border-radius:980px; padding:3px; gap:2px; }
+.seg button { font-family:var(--sans); font-size:13px; font-weight:500; border:none; background:transparent; color:var(--ink-soft); padding:7px 16px; border-radius:980px; cursor:pointer; transition:all .15s; }
+.seg button.active { background:var(--surface); color:var(--blue); box-shadow:var(--shadow-sm); font-weight:600; }
+.dates { display:none; align-items:center; gap:8px; font-size:13px; color:var(--ink-soft); }
+.dates.show { display:flex; }
+.dates input { font-family:var(--sans); font-size:13px; font-weight:500; padding:7px 12px; border:1px solid var(--line); border-radius:10px; background:var(--surface); color:var(--ink); }
+.range-hint { margin-left:auto; font-size:13px; color:var(--ink-faint); padding-right:4px; }
+.range-hint b { color:var(--blue); font-weight:600; }
+
+/* ===== SECTIONS ===== */
+section { margin-top:60px; }
+.sec-head { margin-bottom:20px; }
+.sec-head .eyebrow { font-family:var(--mono); font-size:11.5px; font-weight:600; color:var(--blue); letter-spacing:.06em; }
+.sec-head h2 { font-size:clamp(22px,3.2vw,28px); font-weight:600; letter-spacing:-.025em; margin-top:4px; }
+.sec-head p { color:var(--ink-soft); font-size:15.5px; margin-top:6px; max-width:64ch; font-weight:400; }
+.sec-head p b { color:var(--ink-2); font-weight:600; }
+.plain { display:flex; gap:11px; align-items:flex-start; background:var(--blue-wash); border:none; border-radius:14px; padding:15px 18px; margin-top:18px; font-size:15px; color:var(--ink-2); line-height:1.62; }
+.plain .ic { flex:0 0 auto; color:var(--blue); margin-top:1px; }
+.plain .ic svg { width:18px; height:18px; display:block; }
+.plain b { color:var(--blue-dark); font-weight:600; margin-right:2px; }
+.note { font-size:12.5px; color:var(--ink-faint); margin-top:16px; line-height:1.55; }
+
+/* ===== KEY FINDINGS (#1) ===== */
+.findings { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+.finding { background:color-mix(in srgb,var(--surface) 90%,transparent); -webkit-backdrop-filter:saturate(180%) blur(var(--glass-blur)); backdrop-filter:saturate(180%) blur(var(--glass-blur)); border:1px solid var(--glass-border); border-top:3px solid var(--blue); border-radius:var(--r-card); padding:22px; box-shadow:var(--shadow-md), inset 0 1px 0 var(--glass-hi); }
+.finding.crit { border-top-color:var(--crit); }
+.finding.high { border-top-color:var(--high); }
+.finding .f-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+.finding .f-ic { width:34px; height:34px; border-radius:10px; display:grid; place-items:center; }
+.finding .f-ic svg { width:19px; height:19px; }
+.finding .fnum { font-family:var(--mono); font-size:12px; font-weight:700; color:var(--ink-faint); }
+.finding .fstat { font-size:27px; font-weight:700; letter-spacing:-.03em; line-height:1.05; margin-bottom:10px; }
+.finding h3 { font-size:15.5px; font-weight:600; letter-spacing:-.02em; margin:0 0 8px; line-height:1.32; }
+.finding p { font-size:13px; color:var(--ink-soft); line-height:1.6; }
+.finding .ftag { display:inline-block; margin-top:12px; font-size:11px; font-weight:600; padding:3px 9px; border-radius:980px; background:var(--surface-2); color:var(--ink-soft); }
+
+/* ===== KPI (#2 sparkline+delta) ===== */
+.kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; }
+.kpi { background:color-mix(in srgb,var(--surface) 90%,transparent); -webkit-backdrop-filter:saturate(180%) blur(var(--glass-blur)); backdrop-filter:saturate(180%) blur(var(--glass-blur)); border:1px solid var(--glass-border); border-radius:var(--r-card); padding:24px; box-shadow:var(--shadow-md), inset 0 1px 0 var(--glass-hi); transition:transform .2s ease,box-shadow .25s ease; }
+.kpi:hover { transform:translateY(-3px); box-shadow:var(--shadow-md); }
+.kpi .k-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+.kpi .k-ic { width:36px; height:36px; border-radius:11px; display:grid; place-items:center; }
+.kpi .k-ic svg { width:20px; height:20px; }
+.kpi .k-delta { font-size:12px; font-weight:700; padding:3px 8px; border-radius:980px; }
+.kpi .k-delta.bad { color:var(--crit); background:var(--crit-wash); }
+.kpi .k-delta.good { color:var(--low); background:var(--low-wash); }
+.kpi .k-delta.neutral { color:var(--ink-faint); background:var(--surface-2); }
+.kpi .k-label { font-size:13.5px; color:var(--ink-faint); font-weight:500; margin-bottom:7px; }
+.kpi .k-num { font-size:42px; font-weight:700; line-height:1; letter-spacing:-.04em; }
+.kpi .k-foot { display:flex; align-items:flex-end; justify-content:space-between; gap:10px; margin-top:12px; }
+.kpi .k-sub { font-size:12px; color:var(--ink-faint); font-weight:400; }
+.kpi .spark { flex:0 0 auto; }
+
+/* ===== CARDS / CHARTS (#3) ===== */
+.card { background:var(--glass-bg); -webkit-backdrop-filter:saturate(180%) blur(var(--glass-blur)); backdrop-filter:saturate(180%) blur(var(--glass-blur)); border:1px solid var(--glass-border); border-radius:var(--r-card); padding:26px; box-shadow:var(--shadow-md), inset 0 1px 0 var(--glass-hi); }
+.card h3 { font-size:16.5px; font-weight:600; letter-spacing:-.015em; }
+.card .c-sub { font-size:12.5px; color:var(--ink-faint); margin-top:4px; margin-bottom:18px; font-weight:400; }
+.card .c-sub b { color:var(--ink-2); font-weight:600; }
+.grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.chart-box { position:relative; height:280px; }
+.legend { display:flex; gap:14px; flex-wrap:wrap; margin-top:16px; font-size:12.5px; color:var(--ink-soft); font-weight:400; }
+.legend span { display:inline-flex; align-items:center; gap:6px; }
+.legend i { width:9px; height:9px; border-radius:3px; }
+.legend i.dash { width:14px; height:0; border-top:2px dashed var(--ink-faint); border-radius:0; }
+.dough-wrap { position:relative; }
+.dough-center { position:absolute; inset:0; display:grid; place-items:center; pointer-events:none; text-align:center; }
+.dough-center .big { font-size:32px; font-weight:600; letter-spacing:-.035em; }
+.dough-center .cap { font-size:11.5px; color:var(--ink-faint); font-weight:500; margin-top:2px; }
+
+/* ===== ATT&CK MATRIX (#5) ===== */
+.matrix { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px; }
+.mx-col { min-width:0; }
+.mx-head { font-size:12px; font-weight:600; color:var(--ink-2); padding:0 0 8px; border-bottom:2px solid var(--line); margin-bottom:10px; }
+.mx-head .ph { display:block; font-family:var(--mono); font-size:9.5px; color:var(--ink-faint); font-weight:600; letter-spacing:.04em; margin-bottom:2px; }
+.mx-cell { border-radius:10px; padding:9px 11px; margin-bottom:8px; border:1px solid var(--line-soft); }
+.mx-cell .code { font-family:var(--mono); font-size:11px; font-weight:700; }
+.mx-cell .nm { font-size:12px; font-weight:500; color:var(--ink-2); margin-top:2px; line-height:1.3; }
+.mx-cell .ct { font-size:11px; color:var(--ink-faint); font-weight:600; margin-top:4px; }
+.mx-legend { display:flex; align-items:center; gap:9px; margin-top:16px; font-size:11.5px; color:var(--ink-faint); }
+.mx-legend .bar { width:120px; height:8px; border-radius:980px; background:linear-gradient(90deg, rgba(0,113,227,.14), rgba(0,113,227,.72)); }
+[data-theme="dark"] .mx-legend .bar { background:linear-gradient(90deg, rgba(10,132,255,.2), rgba(10,132,255,.85)); }
+
+/* ===== CAMPAIGN CORRELATION (#4) ===== */
+.campaign { background:var(--glass-bg); -webkit-backdrop-filter:saturate(180%) blur(var(--glass-blur)); backdrop-filter:saturate(180%) blur(var(--glass-blur)); border:1px solid var(--glass-border); border-radius:var(--r-card); padding:24px; box-shadow:var(--shadow-md), inset 0 1px 0 var(--glass-hi); margin-bottom:16px; }
+.campaign h3 { font-size:16.5px; font-weight:600; letter-spacing:-.015em; }
+.campaign .c-sub { font-size:12.5px; color:var(--ink-faint); margin:4px 0 20px; }
+.camp-lane { display:flex; align-items:center; height:38px; }
+.camp-lane .lane-label { width:108px; flex:0 0 auto; font-family:var(--mono); font-size:12px; color:var(--ink-soft); font-weight:600; }
+.camp-track { position:relative; flex:1; height:2px; background:var(--line); border-radius:2px; }
+.camp-dot { position:absolute; top:50%; width:15px; height:15px; border-radius:50%; transform:translate(-50%,-50%); border:2.5px solid var(--surface); box-shadow:var(--shadow-sm); cursor:default; }
+.camp-axis { display:flex; justify-content:space-between; margin-left:108px; margin-top:4px; font-family:var(--mono); font-size:10.5px; color:var(--ink-faint); }
+.camp-legend { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-top:14px; font-size:12px; color:var(--ink-soft); }
+.camp-legend i { width:9px; height:9px; border-radius:50%; display:inline-block; margin-right:5px; vertical-align:middle; }
+.camp-legend .camp-hint { color:var(--ink-faint); }
+.camp-events { list-style:none; margin-top:14px; padding-top:14px; border-top:1px solid var(--line-soft); display:grid; gap:7px; }
+.camp-events li { display:flex; align-items:center; gap:10px; font-size:12.5px; color:var(--ink-soft); }
+.camp-events li .ev-dot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
+.camp-events li .ev-t { font-family:var(--mono); font-weight:600; color:var(--ink-2); flex:0 0 auto; }
+.camp-events li .ev-host { font-family:var(--mono); color:var(--ink-faint); flex:0 0 104px; }
+
+/* ===== INCIDENTS ===== */
+.incidents { display:flex; flex-direction:column; gap:12px; }
+.inc { background:var(--glass-bg); -webkit-backdrop-filter:saturate(180%) blur(var(--glass-blur)); backdrop-filter:saturate(180%) blur(var(--glass-blur)); border:1px solid var(--glass-border); border-radius:var(--r-card); overflow:hidden; box-shadow:var(--shadow-md), inset 0 1px 0 var(--glass-hi); transition:box-shadow .2s,border-color .2s; }
+.inc:hover { box-shadow:var(--shadow-md); }
+.inc.open { border-color:color-mix(in srgb,var(--blue) 30%,var(--line)); }
+.inc-head { display:flex; align-items:center; gap:14px; padding:18px 20px; cursor:pointer; }
+.pill { flex:0 0 auto; font-size:11.5px; font-weight:600; padding:4px 11px; border-radius:999px; }
+.sev-Critical { background:var(--crit-wash); color:var(--crit); }
+.sev-High { background:var(--high-wash); color:var(--high); }
+.sev-Medium { background:var(--med-wash); color:var(--med); }
+.sev-Low { background:var(--low-wash); color:var(--low); }
+.inc-main { flex:1; min-width:0; }
+.inc-path { font-family:var(--mono); font-size:13.5px; font-weight:600; color:var(--ink); }
+.inc-desc { font-size:13px; color:var(--ink-soft); margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.inc-meta { flex:0 0 auto; text-align:right; font-size:12px; color:var(--ink-faint); font-weight:400; }
+.inc-chev { flex:0 0 auto; color:var(--ink-faint); transition:transform .25s; font-size:18px; }
+.inc.open .inc-chev { transform:rotate(90deg); }
+.inc-body { max-height:0; overflow:hidden; transition:max-height .4s ease; }
+.inc.open .inc-body { max-height:2000px; }
+.inc-body-inner { padding:4px 20px 22px; font-size:13.5px; color:var(--ink-soft); line-height:1.7; }
+.inc-body-inner .row { display:flex; gap:10px; margin-bottom:7px; }
+.inc-body-inner .row .lbl { color:var(--ink-faint); flex:0 0 84px; font-size:12.5px; font-weight:600; }
+.inc-body-inner .tag { display:inline-block; font-family:var(--mono); font-size:11.5px; font-weight:600; color:var(--blue); background:var(--blue-wash); padding:2px 8px; border-radius:6px; margin:0 5px 4px 0; }
+
+/* kill-chain ribbon (#4) */
+.kill { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin:16px 0 4px; padding-top:15px; border-top:1px solid var(--line-soft); }
+.kill .kl-label { font-size:12.5px; font-weight:600; color:var(--ink-2); margin-right:4px; }
+.kill .kstep { font-size:11.5px; font-weight:600; padding:5px 11px; border-radius:980px; background:var(--surface-2); color:var(--ink-faint); border:1px solid var(--line-soft); }
+.kill .kstep.on { background:var(--blue); color:#fff; border-color:var(--blue); }
+.kill .karrow { color:var(--ink-faint); font-size:11px; }
+.kill-cap { font-size:11.5px; color:var(--ink-faint); margin:8px 0 2px; line-height:1.5; }
+.kill-cap b { color:var(--blue-dark); font-weight:600; }
+
+.inc-chain-head { display:flex; align-items:center; gap:8px; font-size:12.5px; font-weight:600; color:var(--ink-2); margin:16px 0 14px; }
+.inc-chain-head svg { width:15px; height:15px; color:var(--blue); }
+.inc-finding { display:flex; gap:9px; align-items:flex-start; background:var(--blue-wash); border-radius:12px; padding:12px 14px; margin-top:14px; font-size:13px; color:var(--ink-2); line-height:1.6; }
+.inc-finding b { color:var(--blue-dark); font-weight:600; margin-right:2px; }
+
+/* PID chain */
+.chain { position:relative; }
+.cnode { position:relative; padding:0 0 14px 40px; }
+.cnode:last-child { padding-bottom:0; }
+.cnode::before { content:""; position:absolute; left:13px; top:22px; bottom:0; width:2px; background:var(--line); }
+.cnode:last-child::before { display:none; }
+.cdot { position:absolute; left:4px; top:3px; width:19px; height:19px; border-radius:50%; display:grid; place-items:center; font-size:10.5px; font-weight:700; color:#fff; background:var(--ink-faint); z-index:1; }
+.cnode.esc .cdot { background:var(--high); }
+.cnode.blocked .cdot { background:var(--crit); }
+.cbody { background:var(--surface-2); border:1px solid var(--line-soft); border-radius:12px; padding:12px 14px; }
+.cnode.esc .cbody { border-color:color-mix(in srgb,var(--high) 40%,var(--line)); }
+.cnode.blocked .cbody { background:var(--crit-wash); border-color:color-mix(in srgb,var(--crit) 35%,var(--line)); }
+.cbody .ctop { display:flex; align-items:baseline; gap:9px; flex-wrap:wrap; }
+.cbody .cname { font-family:var(--mono); font-weight:700; font-size:13.5px; color:var(--ink); }
+.cbody .cpid { font-family:var(--mono); font-size:11px; color:var(--ink-faint); }
+.cbody .cexe { font-family:var(--mono); font-size:11.5px; color:var(--ink-soft); margin-top:4px; word-break:break-all; }
+.cbody .cmeta { display:flex; gap:5px; flex-wrap:wrap; margin-top:8px; }
+.ctag { font-size:10.5px; font-weight:500; padding:2px 8px; border-radius:980px; background:var(--surface); border:1px solid var(--line); color:var(--ink-soft); }
+.ctag.esc { background:var(--high-wash); border-color:transparent; color:var(--high); }
+.ctag.blk { background:var(--crit-wash); border-color:transparent; color:var(--crit); }
+.ctag.tech { background:var(--blue-wash); border-color:transparent; color:var(--blue-dark); font-family:var(--mono); font-weight:600; }
+.cbody .cnote { font-size:11.5px; color:var(--ink-faint); margin-top:6px; }
+
+/* ===== RECS ===== */
+.recs { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.rec { display:flex; gap:14px; background:var(--glass-bg); -webkit-backdrop-filter:saturate(180%) blur(var(--glass-blur)); backdrop-filter:saturate(180%) blur(var(--glass-blur)); border:1px solid var(--glass-border); border-radius:var(--r-card); padding:20px; box-shadow:var(--shadow-md), inset 0 1px 0 var(--glass-hi); transition:transform .18s,box-shadow .2s; }
+.rec:hover { transform:translateY(-2px); }
+.rec .pr { flex:0 0 auto; width:30px; height:30px; border-radius:50%; display:grid; place-items:center; font-weight:600; font-size:14px; color:#fff; }
+.rec h4 { font-size:15px; font-weight:600; margin-bottom:5px; letter-spacing:-.015em; }
+.rec p { font-size:13px; color:var(--ink-soft); line-height:1.6; font-weight:400; }
+.rec .when { font-size:11.5px; color:var(--blue); font-weight:600; margin-top:10px; }
+.rec .rlink { font-size:11px; color:var(--ink-faint); margin-top:6px; }
+
+/* ===== REFS ===== */
+.term { border-bottom:1px dotted var(--blue); cursor:help; font-weight:500; }
+.ref-block + .ref-block { margin-top:24px; padding-top:24px; border-top:1px solid var(--line-soft); }
+.ref-block h3 { font-size:15px; font-weight:600; margin-bottom:14px; display:flex; align-items:center; gap:8px; }
+.ref-block h3 .cnt { font-size:11px; font-weight:500; color:var(--ink-faint); background:var(--surface-2); padding:3px 10px; border-radius:980px; }
+.mitre-list { display:grid; gap:8px; }
+.mitre-item { display:flex; gap:12px; padding:12px 14px; background:var(--surface-2); border-radius:12px; }
+.mitre-item .code { font-family:var(--mono); font-size:12px; font-weight:700; color:var(--blue); flex:0 0 96px; }
+.mitre-item .mtext b { font-size:13px; font-weight:600; color:var(--ink); }
+.mitre-item .mtext p { font-size:12.5px; color:var(--ink-soft); margin-top:2px; line-height:1.55; }
+.two-col { display:grid; grid-template-columns:1fr 1fr; gap:32px; }
+.two-col ul { list-style:none; }
+.two-col li { font-size:13.5px; color:var(--ink-soft); padding:9px 0; border-bottom:1px solid var(--line-soft); display:flex; gap:12px; }
+.two-col li b { color:var(--ink); font-weight:600; flex:0 0 108px; }
+.method { font-size:12.5px; color:var(--ink-soft); line-height:1.7; }
+.method b { color:var(--ink-2); font-weight:600; }
+
+footer { margin-top:64px; padding-top:26px; border-top:1px solid var(--line-soft); font-size:12.5px; color:var(--ink-faint); display:flex; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+
+/* ===== REVEAL ===== */
+.reveal { opacity:0; transform:translateY(16px); transition:opacity .6s cubic-bezier(.28,.11,.32,1),transform .6s cubic-bezier(.28,.11,.32,1); }
+.reveal.in { opacity:1; transform:none; }
+.stagger > * { opacity:0; transform:translateY(14px); }
+.stagger.in > * { animation:rise .55s cubic-bezier(.28,.11,.32,1) forwards; }
+.stagger.in > *:nth-child(1){animation-delay:.05s} .stagger.in > *:nth-child(2){animation-delay:.12s}
+.stagger.in > *:nth-child(3){animation-delay:.19s} .stagger.in > *:nth-child(4){animation-delay:.26s}
+@keyframes rise { to {opacity:1;transform:none} }
+@media (prefers-reduced-motion:reduce){ .reveal,.stagger>*{opacity:1!important;transform:none!important;animation:none!important} }
+@media (max-width:820px){ .kpis{grid-template-columns:repeat(2,1fr)} .grid-2,.recs,.two-col,.findings{grid-template-columns:1fr} .matrix{grid-template-columns:repeat(2,1fr)} .mitre-item .code{flex-basis:80px} }
+@media print {
+  @page { size:A4; margin:14mm; }
+  .topbar,#progress,.range-bar,.btn { display:none !important; }
+  body { background:#fff; }
+  body::before { display:none !important; }
+  .card,.kpi,.inc,.rec,.chip,.finding,.campaign,.range-bar { box-shadow:none !important; backdrop-filter:none !important; -webkit-backdrop-filter:none !important; background:#fff !important; border:1px solid #e5e7eb !important; break-inside:avoid; }
+  .inc-body { max-height:none !important; }
+  section { break-inside:avoid; margin-top:22px; }
+  .reveal,.stagger>*{opacity:1!important;transform:none!important}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+
+<div class="topbar" id="topbar">
+  <div class="brand"><span class="mark"><img src="assets/images/kn.png" alt="KN-IG 로고"></span><div>KN-IG<small>무결성 보안 리포트</small></div></div>
+  <div class="topbar-actions">
+    <button class="btn" id="theme-btn" title="테마 전환"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button>
+    <button class="btn btn-primary" onclick="window.print()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z"/></svg>PDF 저장</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- HERO -->
+  <header class="hero reveal">
+    <div class="kicker">주간 무결성 리포트 · 2026년 5월 3주차</div>
+    <h1>이번 기간 <b><span class="num">142</span>건</b>의 변조 시도를 차단했습니다</h1>
+    <p class="lede">KN-IG가 7개 핵심 자산에 대한 무결성 이벤트를 감시했으며, 대부분을 실제 피해가 발생하기 전에 차단했습니다. 핵심 내용을 비전문가도 이해할 수 있도록 정리했습니다.</p>
+    <div class="hero-meta">
+      <span class="chip"><span class="lab">대상 기간</span>2026.05.14 – 05.21</span>
+      <span class="chip"><span class="lab">감시 호스트</span>3대</span>
+      <span class="chip sev"><span class="dot" style="background:var(--crit)"></span>종합 위험도 HIGH</span>
+    </div>
+  </header>
+
+  <!-- RANGE -->
+  <div class="range-bar reveal">
+    <div class="seg" id="range-seg">
+      <button class="active" data-range="since">저번 리포트 이후</button>
+      <button data-range="7d">최근 7일</button>
+      <button data-range="custom">기간 선택</button>
+    </div>
+    <div class="dates" id="range-dates"><input type="date" value="2026-05-14"><span>→</span><input type="date" value="2026-05-21"></div>
+    <div class="range-hint">분석 대상 <b id="range-count">160건</b></div>
+  </div>
+
+  <!-- 1. KEY FINDINGS -->
+  <section>
+    <div class="sec-head reveal"><div class="eyebrow">01 / KEY FINDINGS</div><h2>핵심 발견</h2><p>이번 기간에서 가장 먼저 알아야 할 세 가지입니다.</p></div>
+    <div class="findings stagger" id="findings"></div>
+  </section>
+
+  <!-- 2. OVERVIEW -->
+  <section>
+    <div class="sec-head reveal"><div class="eyebrow">02 / OVERVIEW</div><h2>한눈에 보기</h2><p>핵심 지표와 전기간 대비 변화입니다.</p></div>
+    <div class="kpis stagger" id="kpis"></div>
+    <div class="plain reveal">
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 11v5" stroke-linecap="round"/><path d="M12 8h.01" stroke-linecap="round"/></svg></span>
+      <div><b>요약</b> 변경 시도 160건 중 142건(88.8%)을 사전 차단했습니다. 전기간 대비 23% 증가했고, 치명적 자산 표적이 13→22건으로 늘어 추가 조사가 필요합니다.</div>
+    </div>
+  </section>
+
+  <!-- 3. TIMELINE -->
+  <section>
+    <div class="sec-head reveal"><div class="eyebrow">03 / TREND</div><h2>차단한 위협 추이</h2><p>일자별 차단 위협을 위험 등급별로, 지난 기간과 비교해 보여줍니다.</p></div>
+    <div class="card reveal">
+      <h3>5월 18일, 차단 건수가 평소의 약 3배</h3><div class="c-sub">위험 등급별 누적 · <b>점선=지난 기간 일별 합계</b></div>
+      <div class="chart-box"><canvas id="chartTimeline"></canvas></div>
+      <div class="legend">
+        <span><i style="background:var(--crit)"></i>Critical</span><span><i style="background:var(--high)"></i>High</span>
+        <span><i style="background:var(--med)"></i>Medium</span><span><i style="background:var(--low)"></i>Low</span>
+        <span><i class="dash"></i>지난 기간</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. SEVERITY + TARGET -->
+  <section>
+    <div class="sec-head reveal"><div class="eyebrow">04 / SEVERITY &amp; TARGETS</div><h2>위험도 및 표적 자산</h2><p>위험 등급 분포와 표적이 된 자산 종류입니다.</p></div>
+    <div class="grid-2">
+      <div class="card reveal">
+        <h3>치명적·높음이 전체의 43%</h3><div class="c-sub">전체 이벤트 심각도별 분포</div>
+        <div class="dough-wrap"><div class="chart-box"><canvas id="chartSeverity"></canvas></div>
+          <div class="dough-center"><div><div class="big num">160</div><div class="cap">전체</div></div></div></div>
+        <div class="legend">
+          <span><i style="background:var(--crit)"></i>Critical 22</span><span><i style="background:var(--high)"></i>High 47</span>
+          <span><i style="background:var(--med)"></i>Medium 61</span><span><i style="background:var(--low)"></i>Low 30</span>
+        </div>
+      </div>
+      <div class="card reveal">
+        <h3>상위 3종이 자격증명·권한·원격접속</h3><div class="c-sub">표적 자산 종류별 건수 (치명적 자산 강조)</div>
+        <div class="chart-box"><canvas id="chartCategory"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. WHERE + ATT&CK MATRIX -->
+  <section>
+    <div class="sec-head reveal"><div class="eyebrow">05 / WHERE &amp; HOW</div><h2>발생 위치 및 공격 수법</h2><p>호스트별 발생량과 국제 표준(<span class="term" title="실제 공격 수법을 코드 체계로 분류한 국제 표준">MITRE ATT&CK</span>) 전술 단계별 관측 기법입니다.</p></div>
+    <div class="card reveal" style="margin-bottom:16px">
+      <h3>HMI-01에 집중</h3><div class="c-sub">호스트별 이벤트 · 차단 vs 미차단(확인 필요)</div>
+      <div class="chart-box" style="height:220px"><canvas id="chartHost"></canvas></div>
+    </div>
+    <div class="card reveal">
+      <h3>공격 수법 한눈에 — ATT&CK 매트릭스</h3><div class="c-sub">공격자가 쓴 수법을 <b>전술(목적) 6단계</b>로 분류했습니다. 각 칸은 관측된 세부 기법이며 <b>색이 진할수록 자주</b> 관측됐습니다.</div>
+      <div class="matrix" id="matrix"></div>
+      <div class="mx-legend"><span>적게 관측</span><span class="bar"></span><span>자주 관측</span></div>
+    </div>
+  </section>
+
+  <!-- 6. INCIDENTS (campaign + kill-chain + per-node MITRE) -->
+  <section>
+    <div class="sec-head reveal"><div class="eyebrow">06 / INCIDENTS</div><h2>주목할 사건</h2><p>가장 위험했던 개별 사건과, 동일 시각 다중 호스트에서 발생한 캠페인 상관관계입니다. 항목을 펼치면 킬체인·프로세스 계보(PID Chain)가 표시됩니다.</p></div>
+    <div class="campaign reveal">
+      <h3>여러 호스트에서 동시에? — 캠페인 상관</h3>
+      <div class="c-sub">가로축은 <b>시간</b>, 각 줄은 <b>호스트(컴퓨터)</b>입니다. 점 하나가 차단된 시도이고 색은 위험도예요. <b>짧은 시간에 여러 호스트로 점이 몰리면</b> 한 공격자의 조직적 시도일 가능성이 높습니다.</div>
+      <div id="campaign"></div>
+      <div class="camp-axis"><span>15:00</span><span>15:05</span><span>15:10</span><span>15:15</span></div>
+      <div class="camp-legend"><span><i style="background:var(--crit)"></i>Critical</span><span><i style="background:var(--low)"></i>Low</span><span class="camp-hint">↳ 15:01–15:06, 3개 호스트가 6분 내 연쇄 — 조직적 캠페인으로 추정</span></div>
+      <ol class="camp-events" id="camp-events"></ol>
+    </div>
+    <div class="incidents reveal" id="incidents"></div>
+    <p class="note reveal">※ PID Chain 추적 항목: 프로세스명·PID/부모PID·실행파일·명령행·실행 사용자(uid→euid 권한 상승)·tty·세션. 원격 출처 IP는 현재 수집 항목에 포함되지 않으며, 원격 세션 여부는 tty(pts/*)로 간접 확인합니다.</p>
+  </section>
+
+  <!-- 7. RECS -->
+  <section>
+    <div class="sec-head reveal"><div class="eyebrow">07 / ACTIONS</div><h2>권고 조치</h2><p>우선순위 순으로 정리한 즉시 실행 가능한 대응이며, 관련 사건과 연결됩니다.</p></div>
+    <div class="recs reveal" id="recs"></div>
+  </section>
+
+  <!-- 8. REFS -->
+  <section>
+    <div class="sec-head reveal"><div class="eyebrow">08 / REFERENCES</div><h2>참조 기준 · 용어 · 방법론</h2></div>
+    <div class="card reveal">
+      <div class="ref-block">
+        <h3>이 리포트에서 관측된 공격 기법 <span class="cnt">MITRE ATT&CK 7</span></h3>
+        <div class="mitre-list" id="mitre-list"></div>
+      </div>
+      <div class="ref-block">
+        <div class="two-col">
+          <div>
+            <h3>적용 표준</h3>
+            <ul>
+              <li><b>IEC 62443</b><span>산업 자동화·제어 시스템(IACS) 사이버 보안 국제 표준.</span></li>
+              <li><b>NIST 800-82</b><span>산업 제어 시스템(ICS) 보안 가이드.</span></li>
+              <li><b>MITRE ATT&CK</b><span>공격 전술·기법 분류. ICS 매트릭스 우선.</span></li>
+              <li><b>KISA</b><span>국내 산업제어시스템 보안 가이드라인.</span></li>
+            </ul>
+          </div>
+          <div>
+            <h3>용어 정의</h3>
+            <ul>
+              <li><b>무결성</b><span>파일이 허가 없이 변경되지 않은 원본 그대로의 상태.</span></li>
+              <li><b>차단</b><span>변경 직전에 막아 실제 피해가 없는 상태.</span></li>
+              <li><b>PID Chain</b><span>프로세스의 부모-자식 계보. 공격 시작 지점 추적.</span></li>
+              <li><b>권한 상승</b><span>일반 권한(uid)에서 관리자(euid 0) 권한 획득.</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="ref-block">
+        <h3>방법론 및 데이터 신뢰도</h3>
+        <p class="method"><b>분석 대상</b> 감시 호스트 3대(HMI-01·EWS-02·Historian-03), 기간 2026.05.14–05.21(168시간, 데이터 수집 완전성 100%). <b>집계 기준</b> 무결성 가드가 시스템 콜 단계에서 기록한 FILE_EVENT(차단·사후탐지). <b>제외</b> 정책 허용 변경·서명된 패키지 업데이트. <b>추정 표기</b> 공격 의도·시나리오는 관측 기반 추정이며 "~로 추정"으로 명시. 위험 등급은 자산 분류 규칙 + LLM 분석 결과로 산정되며 최종 판단은 보안 담당자가 수행합니다.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div>KN-IG 무결성 가드 · 자동 생성 리포트 (데모)<br>본 리포트는 AI 분석 결과를 포함하며 참고용입니다. 최종 판단은 보안 담당자가 수행해야 합니다.</div>
+    <div>report-demo-upgrade · v0.2 · mock data</div>
+  </footer>
+</div>
+
+<script>
+/* ============================== MOCK DATA ============================== */
+const DATA = {
+  days: ["05-14","05-15","05-16","05-17","05-18","05-19","05-20"],
+  blockedBySev: {
+    Critical: [1,1,2,1,8,4,3],
+    High:     [3,2,4,4,13,8,7],
+    Medium:   [5,4,6,6,14,11,9],
+    Low:      [3,2,3,3,6,5,4],
+  },
+  prevPeriodDaily: [12,10,13,12,15,14,13],   // 지난 기간 일별 합계 (비교선)
+  severity: { Critical:22, High:47, Medium:61, Low:30 },
+  category: [
+    ["로그인 자격증명 (/etc/shadow)", 31, true],
+    ["관리자 권한 설정 (/etc/sudoers)", 24, true],
+    ["원격 접속 설정 (/etc/ssh)", 19, true],
+    ["예약 작업 (cron)", 22, false],
+    ["시스템 서비스 (systemd)", 17, false],
+    ["네트워크 설정", 14, false],
+    ["애플리케이션 설정", 19, false],
+    ["로그 파일 (/var/log)", 14, false],
+  ],
+  hosts: [ ["HMI-01",63,8], ["EWS-02",45,4], ["Historian-03",34,6] ],
+  findings: [
+    { sev:"crit", stat:"3 호스트 · 6분", tag:"조직적 캠페인", title:"동시 다발 자격증명 표적",
+      body:"5/18 15:01–15:06 사이 HMI-01·EWS-02·Historian-03에서 비밀번호·권한·원격접속 파일을 거의 동시에 노렸습니다. 단일 위협 주체의 조직적 시도로 추정됩니다." },
+    { sev:"low", stat:"100% 차단", tag:"차단율 88.8%", title:"치명적 위협 전부 사전 차단",
+      body:"치명적 등급 22건을 실제 변경 전에 모두 막았습니다. 미차단 18건은 사후 탐지로, 변경 여부 확인이 필요합니다." },
+    { sev:"high", stat:"4개 사건 동일", tag:"권한 상승 패턴", title:"권한 상승 후 변조 반복",
+      body:"일반 계정이 sudo·스크립트로 root 권한(euid 0)을 획득한 직후 보호 파일을 변경하려는 동일 패턴이 모든 사건에서 관측됐습니다." },
+  ],
+  kpis: [
+    { label:"전체 이벤트", num:160, delta:"▲ 23%", tone:"bad", sub:"전기간 130건", color:"--blue", icon:"folder", spark:[96,110,104,118,130,124,160] },
+    { label:"차단 (사전 차단율)", num:142, delta:"88.8%", tone:"good", sub:"전기간 87.1%", color:"--low", icon:"shield", spark:[101,98,112,120,116,122,142] },
+    { label:"미차단 · 확인 필요", num:18, delta:"▲ 6", tone:"bad", sub:"전기간 12건", color:"--high", icon:"search", spark:[9,11,8,13,12,15,18] },
+    { label:"치명적 자산 표적", num:22, delta:"▲ 9", tone:"bad", sub:"전기간 13건", color:"--crit", icon:"alert", spark:[7,9,8,11,13,12,22] },
+  ],
+  attackMatrix: [
+    { tactic:"초기 접근", en:"Initial Access", tech:[ {id:"T1078",nm:"유효 계정",n:6} ] },
+    { tactic:"자격증명 접근", en:"Credential Access", tech:[ {id:"T1003",nm:"자격증명 추출",n:28} ] },
+    { tactic:"권한 상승", en:"Privilege Esc.", tech:[ {id:"T1548",nm:"Sudo 악용",n:12}, {id:"T1068",nm:"취약점 악용",n:7} ] },
+    { tactic:"지속성", en:"Persistence", tech:[ {id:"T1098",nm:"계정 조작",n:21}, {id:"T1543",nm:"systemd 서비스",n:17}, {id:"T1053",nm:"cron 작업",n:15} ] },
+    { tactic:"방어 회피", en:"Defense Evasion", tech:[ {id:"T1556",nm:"인증 변조",n:11}, {id:"T1070",nm:"로그 삭제",n:9} ] },
+    { tactic:"영향", en:"Impact", tech:[ {id:"T1565",nm:"데이터 변조",n:8} ] },
+  ],
+  killPhases: ["초기 접근","권한 상승","자격증명 접근","방어 회피","영향"],
+  campaign: [   // t = 15:00 기준 경과 분 (축 0–15)
+    { host:"HMI-01",       t:1,  sev:"Critical", label:"/etc/shadow 15:01" },
+    { host:"EWS-02",       t:3,  sev:"Critical", label:"/etc/sudoers.d 15:03" },
+    { host:"Historian-03", t:6,  sev:"Critical", label:"/etc/ssh/sshd_config 15:06" },
+    { host:"HMI-01",       t:12, sev:"Low",      label:"audit.log 삭제 15:12" },
+  ],
+  campaignHosts: ["HMI-01","EWS-02","Historian-03"],
+  incidents: [
+    { sev:"Critical", path:"/etc/shadow", host:"HMI-01", time:"05-18 15:01", type:"수정 시도", action:"차단",
+      desc:"운영 계정 비밀번호를 무단 변경하려는 시도로, 영구 접근 경로 확보 정황이 있습니다.",
+      mitre:["T1003.008","T1098"], kill:[0,1,2,4],
+      detail:"초기 침투에 성공한 위협 주체가 운영 계정 비밀번호를 임의 값으로 재설정해 지속적 접근 통로를 확보하려는 시도로 추정됩니다. KN-IG가 변경 직전에 차단하여 실제 변경은 발생하지 않았습니다.",
+      finding:"원격 셸 세션(pts/2)의 일반 계정(operator)이 python3 실행 중 root로 상승(uid 1000 → euid 0)한 직후 /etc/shadow 변경을 시도했습니다.",
+      chain:[
+        { step:1, name:"sshd", pid:812, ppid:1, exe:"/usr/sbin/sshd", user:"root", tty:"—", note:"원격 SSH 접속을 수락한 데몬" },
+        { step:2, name:"bash", pid:1340, ppid:812, exe:"/bin/bash", user:"operator (uid 1000)", tty:"pts/2", note:"원격 세션 셸 — pts/2는 원격 접속 정황" },
+        { step:3, name:"python3", pid:1502, ppid:1340, exe:"/usr/bin/python3", cmd:"python3 /tmp/.sysupd.py", user:"uid 1000 → euid 0", tty:"pts/2", note:"실행 중 root 권한으로 상승", esc:true, tech:"T1068" },
+        { step:4, name:"차단된 시도", pid:1502, ppid:1340, exe:"write() → /etc/shadow", user:"euid 0", note:"무결성 가드가 시스템 콜 단계에서 차단", blocked:true, tech:"T1003.008" },
+      ] },
+    { sev:"Critical", path:"/etc/sudoers.d/zz_temp", host:"EWS-02", time:"05-18 15:03", type:"수정 시도", action:"차단",
+      desc:"일반 계정에 관리자 권한을 부여하려는 정책 파일 삽입 시도입니다.",
+      mitre:["T1548.003"], kill:[0,1,4],
+      detail:"권한 설정 디렉터리에 임시 정책 파일을 삽입해 비인가 계정에 관리자 권한을 부여하려는 권한 상승 시도입니다. 파일명을 'zz_'로 시작해 정책 적용 우선순위를 높이려 한 점에서 의도적 우회로 판단됩니다.",
+      finding:"operator 계정이 sudo로 root 권한을 획득한 뒤, sudoers.d에 영구 권한 부여 정책 파일을 심으려 시도했습니다.",
+      chain:[
+        { step:1, name:"sshd", pid:905, ppid:1, exe:"/usr/sbin/sshd", user:"root", tty:"—", note:"원격 SSH 접속 수락" },
+        { step:2, name:"bash", pid:2210, ppid:905, exe:"/bin/bash", user:"operator (uid 1000)", tty:"pts/1", note:"원격 세션 셸" },
+        { step:3, name:"sudo", pid:2333, ppid:2210, exe:"/usr/bin/sudo", cmd:"sudo -s", user:"uid 1000 → euid 0", tty:"pts/1", note:"sudo로 root 권한 획득", esc:true, tech:"T1548.003" },
+        { step:4, name:"bash", pid:2334, ppid:2333, exe:"/bin/bash", user:"root (euid 0)", tty:"pts/1", note:"상승된 root 셸" },
+        { step:5, name:"차단된 시도", pid:2334, ppid:2333, exe:"write() → /etc/sudoers.d/zz_temp", user:"euid 0", note:"권한 정책 파일 삽입을 차단", blocked:true, tech:"T1098" },
+      ] },
+    { sev:"Critical", path:"/etc/ssh/sshd_config", host:"Historian-03", time:"05-18 15:06", type:"수정 시도", action:"차단",
+      desc:"외부에서 관리자로 직접 접속할 수 있도록 원격 접속 설정을 변경하려는 시도입니다.",
+      mitre:["T1556","T1098.004"], kill:[0,1,4],
+      detail:"SSH 설정에서 관리자 직접 로그인 및 인증 우회를 허용하려는 시도로, 외부의 지속 접근 통로를 확보하려는 정황입니다. Historian은 공정 데이터를 보관하는 핵심 자산이므로 가용성·무결성 영향이 큽니다.",
+      finding:"서비스 계정(svc-historian)이 sudo로 권한 상승 후 sed로 sshd_config의 PermitRootLogin을 활성화하려 시도했습니다.",
+      chain:[
+        { step:1, name:"sshd", pid:770, ppid:1, exe:"/usr/sbin/sshd", user:"root", tty:"—", note:"원격 SSH 접속 수락" },
+        { step:2, name:"bash", pid:3401, ppid:770, exe:"/bin/bash", user:"svc-historian (uid 1001)", tty:"pts/0", note:"서비스 계정 원격 셸" },
+        { step:3, name:"sudo", pid:3500, ppid:3401, exe:"/usr/bin/sudo", cmd:"sudo sed -i ...", user:"uid 1001 → euid 0", tty:"pts/0", note:"sudo로 권한 상승", esc:true, tech:"T1548.003" },
+        { step:4, name:"sed", pid:3501, ppid:3500, exe:"/usr/bin/sed", cmd:"sed -i 's/#PermitRootLogin.*/PermitRootLogin yes/'", user:"root (euid 0)", tty:"pts/0", note:"sshd_config 인증 설정 변경 시도", tech:"T1556" },
+        { step:5, name:"차단된 시도", pid:3501, ppid:3500, exe:"write() → /etc/ssh/sshd_config", user:"euid 0", note:"원격 접속 설정 변경을 차단", blocked:true, tech:"T1556" },
+      ] },
+    { sev:"Low", path:"/var/log/audit/audit.log", host:"HMI-01", time:"05-18 15:12", type:"삭제 시도", action:"차단",
+      desc:"감사 로그를 삭제해 흔적을 제거하려는 정황입니다. (등급은 낮으나 의심 활동)",
+      mitre:["T1070.002"], kill:[0,1,3],
+      detail:"로그 삭제 자체의 직접 피해는 작으나, 앞선 자격증명 변조 시도 직후에 발생해 흔적 은폐를 목적으로 한 후속 행위로 추정됩니다. 단독으로는 Low 등급이나 선행 사건과 연계해 보면 위험 신호입니다.",
+      finding:"사건 #1과 동일한 python3 프로세스(PID 1502)가 shadow 변경 시도 직후 감사 로그를 삭제해 흔적을 지우려 했습니다.",
+      chain:[
+        { step:1, name:"sshd", pid:812, ppid:1, exe:"/usr/sbin/sshd", user:"root", tty:"—", note:"사건 #1과 동일 세션" },
+        { step:2, name:"bash", pid:1340, ppid:812, exe:"/bin/bash", user:"operator (uid 1000)", tty:"pts/2", note:"동일 원격 셸" },
+        { step:3, name:"python3", pid:1502, ppid:1340, exe:"/usr/bin/python3", cmd:"python3 /tmp/.sysupd.py", user:"uid 1000 → euid 0", tty:"pts/2", note:"shadow 시도와 동일 프로세스", esc:true, tech:"T1068" },
+        { step:4, name:"차단된 시도", pid:1502, ppid:1340, exe:"unlink() → /var/log/audit/audit.log", user:"euid 0", note:"감사 로그 삭제(흔적 은폐)를 차단", blocked:true, tech:"T1070.002" },
+      ] },
+  ],
+  recs: [
+    { p:1, sev:"crit", title:"5/18 집중 시도 호스트 점검", when:"권장 시점 · 즉시 (1시간 이내)", body:"HMI-01·EWS-02·Historian-03의 로그인 기록과 프로세스 실행 내역을 확보해 시도 주체(UID·PID·부모 프로세스)를 식별합니다.", link:"관련 사건 #1·#2·#3·#4" },
+    { p:2, sev:"crit", title:"자격증명·접속 설정 무결성 재검증", when:"권장 시점 · 즉시 (1시간 이내)", body:"비밀번호 파일과 원격 접속 설정의 베이스라인 해시를 현재 값과 대조해 무단 변경 여부를 확인합니다.", link:"관련 사건 #1·#3" },
+    { p:3, sev:"high", title:"사후 탐지 18건 개별 점검", when:"권장 시점 · 24시간 이내", body:"차단되지 않고 탐지된 18건은 실제 변경 여부가 불확실합니다. 변경 전후 상태를 확인하고 필요 시 복구합니다.", link:"미차단 KPI 연계" },
+    { p:4, sev:"med", title:"증적 보존 후 보안팀 이관", when:"권장 시점 · 24시간 이내", body:"사건을 사건관리 시스템에 등록하고 표준 증적을 보존한 뒤, SOC에 이관하여 추적 감시를 요청합니다.", link:"관련 사건 #4 (로그 삭제)" },
+  ],
+  mitreGlossary: [
+    ["T1003.008", "OS 자격증명 추출 (/etc/passwd & /etc/shadow)", "시스템에 저장된 로그인 자격증명을 비인가 경로로 획득하려는 행위입니다."],
+    ["T1098", "계정 조작", "기존 계정의 인증 정보나 권한을 임의로 변경해 지속적인 접근 통로를 확보합니다."],
+    ["T1548.003", "Sudo 및 Sudo 캐싱 악용", "sudo 권한 정책을 악용해 일반 계정이 관리자 권한을 획득합니다."],
+    ["T1556", "인증 절차 변조", "로그인 검증 과정 자체를 조작해 정상 인증을 우회합니다."],
+    ["T1543.002", "systemd 서비스 생성/변조", "정상 서비스로 위장한 서비스를 등록해 재부팅 후에도 지속성을 확보합니다."],
+    ["T1053.003", "예약 작업 (cron)", "cron에 작업을 심어 주기적 실행과 지속성을 확보합니다."],
+    ["T1070.002", "로그 삭제", "시스템·감사 로그를 삭제해 공격 흔적을 제거하고 탐지를 회피합니다."],
+  ],
+};
+
+/* ============================== THEME ============================== */
+const root = document.documentElement;
+function cssv(n){ return getComputedStyle(root).getPropertyValue(n).trim(); }
+document.getElementById('theme-btn').addEventListener('click', () => {
+  root.setAttribute('data-theme', root.getAttribute('data-theme')==='dark'?'light':'dark');
+  setTimeout(()=>{ rethemeCharts(); renderSparks(); renderMatrix(); renderCampaign(); }, 60);
+});
+
+/* ============================== CHARTS ============================== */
+let charts = [];
+const F = () => ({ family:getComputedStyle(document.body).fontFamily, size:12, weight:'500' });
+Chart.defaults.font.family = 'inherit';
+Chart.defaults.plugins.legend.display = false;
+function tt(){ return { backgroundColor:cssv('--ink'), titleColor:cssv('--bg'), bodyColor:cssv('--bg'), padding:10, cornerRadius:10, titleFont:F(), bodyFont:F(), displayColors:true, boxPadding:5, usePointStyle:true }; }
+function hexA(hex,a){ hex=hex.replace('#',''); if(hex.length===3) hex=hex.split('').map(c=>c+c).join(''); const n=parseInt(hex,16); return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`; }
+function sevVar(k){ return k==='Critical'?'crit':k==='High'?'high':k==='Medium'?'med':'low'; }
+
+/* 막대 값 직접 라벨 플러그인 (#3) */
+const valueLabel = {
+  id:'valueLabel',
+  afterDatasetsDraw(chart){
+    const o = chart.options.plugins.valueLabel; if(!o||!o.on) return;
+    const ctx = chart.ctx;
+    chart.data.datasets.forEach((ds,di)=>{
+      chart.getDatasetMeta(di).data.forEach((el,i)=>{
+        ctx.save();
+        ctx.font = '600 11px '+getComputedStyle(document.body).fontFamily;
+        ctx.fillStyle = cssv('--ink-soft'); ctx.textBaseline='middle';
+        ctx.fillText(ds.data[i], el.x+7, el.y);
+        ctx.restore();
+      });
+    });
+  }
+};
+Chart.register(valueLabel);
+
+function makeTimeline(){
+  const ctx=document.getElementById('chartTimeline');
+  const order=['Low','Medium','High','Critical'];
+  const ds = order.map(k=>({ label:k, data:DATA.blockedBySev[k], borderColor:cssv('--'+sevVar(k)),
+    backgroundColor:hexA(cssv('--'+sevVar(k)),.5), fill:true, tension:.35, borderWidth:1.5, pointRadius:0, pointHoverRadius:4, stack:'sev' }));
+  ds.push({ label:'지난 기간', data:DATA.prevPeriodDaily, borderColor:cssv('--ink-faint'), borderDash:[5,4], borderWidth:1.5, fill:false, pointRadius:0, tension:.35, stack:'cmp' });
+  const opt = baseOpts({ x:{grid:{display:false},stacked:true}, y:{beginAtZero:true,stacked:true} });
+  return new Chart(ctx,{ type:'line', data:{ labels:DATA.days, datasets:ds }, options:opt });
+}
+function makeSeverity(){
+  const s=DATA.severity;
+  return new Chart(document.getElementById('chartSeverity'),{ type:'doughnut',
+    data:{ labels:Object.keys(s), datasets:[{ data:Object.values(s), backgroundColor:[cssv('--crit'),cssv('--high'),cssv('--med'),cssv('--low')], borderColor:cssv('--surface'), borderWidth:4, hoverOffset:6, borderRadius:6 }]},
+    options:{ cutout:'72%', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},tooltip:tt()}, animation:{animateRotate:true,duration:850} } });
+}
+function makeCategory(){
+  const opt = baseOpts({ x:{beginAtZero:true, grid:{display:false}, ticks:{display:false}}, y:{grid:{display:false}} }, 'y');
+  opt.plugins.valueLabel = { on:true };
+  opt.layout = { padding:{ right:28 } };
+  return new Chart(document.getElementById('chartCategory'),{ type:'bar',
+    data:{ labels:DATA.category.map(c=>c[0]), datasets:[{ data:DATA.category.map(c=>c[1]),
+      backgroundColor:DATA.category.map(c=> c[2] ? cssv('--crit') : cssv('--blue')), borderRadius:7, barThickness:14 }]},
+    options: opt });
+}
+function makeHost(){
+  return new Chart(document.getElementById('chartHost'),{ type:'bar',
+    data:{ labels:DATA.hosts.map(h=>h[0]), datasets:[
+      { data:DATA.hosts.map(h=>h[1]), backgroundColor:cssv('--blue'), borderRadius:{bottomLeft:7,bottomRight:7}, barThickness:30, stack:'s' },
+      { data:DATA.hosts.map(h=>h[2]), backgroundColor:cssv('--crit'), borderRadius:{topLeft:7,topRight:7}, barThickness:30, stack:'s' },
+    ]},
+    options: baseOpts({ x:{grid:{display:false},stacked:true}, y:{beginAtZero:true,stacked:true} }) });
+}
+function baseOpts(scales, indexAxis){
+  const s={}; for(const k in scales){ s[k]=Object.assign({ ticks:{color:cssv('--ink-faint'),font:F()}, grid:{color:cssv('--line-soft'),drawTicks:false}, border:{display:false} }, scales[k]); }
+  return { indexAxis:indexAxis||'x', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},tooltip:tt(),valueLabel:{on:false}}, scales:s, animation:{duration:800,easing:'easeOutQuart'} };
+}
+function buildCharts(){ charts=[makeTimeline(),makeSeverity(),makeCategory(),makeHost()]; }
+function rethemeCharts(){ charts.forEach(c=>c.destroy()); buildCharts(); }
+
+/* ============================== SPARKLINE (#2) ============================== */
+function sparkSVG(series, colorVar){
+  const w=72, h=24, p=2, max=Math.max(...series), min=Math.min(...series), rng=(max-min)||1;
+  const pts = series.map((v,i)=>{
+    const x = p + i*(w-2*p)/(series.length-1);
+    const y = h-p - ((v-min)/rng)*(h-2*p);
+    return [x,y];
+  });
+  const line = pts.map((q,i)=>(i?'L':'M')+q[0].toFixed(1)+' '+q[1].toFixed(1)).join(' ');
+  const area = line+` L${(w-p).toFixed(1)} ${h-p} L${p} ${h-p} Z`;
+  const c = cssv(colorVar);
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" fill="none">
+    <path d="${area}" fill="${hexA(c,.12)}"/>
+    <path d="${line}" stroke="${c}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="${pts[pts.length-1][0].toFixed(1)}" cy="${pts[pts.length-1][1].toFixed(1)}" r="2" fill="${c}"/>
+  </svg>`;
+}
+function renderSparks(){ document.querySelectorAll('.kpi').forEach((el,i)=>{ const s=el.querySelector('.spark-wrap'); if(s) s.innerHTML=sparkSVG(DATA.kpis[i].spark, DATA.kpis[i].color); }); }
+
+/* ============================== ICONS ============================== */
+const ICONS = {
+  folder:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  shield:'<path d="M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/>',
+  search:'<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/>',
+  alert:'<path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/>',
+};
+
+/* ============================== RENDER ============================== */
+function renderFindings(){
+  const wash={crit:'--crit-wash',high:'--high-wash',low:'--low-wash'};
+  const col={crit:'--crit',high:'--high',low:'--low'};
+  const ic={crit:ICONS.alert,high:ICONS.search,low:ICONS.shield};
+  document.getElementById('findings').innerHTML = DATA.findings.map((f,i)=>`
+    <div class="finding ${f.sev}">
+      <div class="f-top">
+        <span class="f-ic" style="background:var(${wash[f.sev]});color:var(${col[f.sev]})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ic[f.sev]}</svg></span>
+        <span class="fnum">0${i+1}</span>
+      </div>
+      <div class="fstat" style="color:var(${col[f.sev]})">${f.stat}</div>
+      <h3>${f.title}</h3>
+      <p>${f.body}</p>
+      <span class="ftag">${f.tag}</span>
+    </div>`).join('');
+}
+function renderKPIs(){
+  const wash={'--blue':'--blue-wash','--low':'--low-wash','--high':'--high-wash','--crit':'--crit-wash'};
+  document.getElementById('kpis').innerHTML = DATA.kpis.map(k=>`
+    <div class="kpi">
+      <div class="k-top">
+        <span class="k-ic" style="background:var(${wash[k.color]});color:var(${k.color})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[k.icon]}</svg></span>
+        <span class="k-delta ${k.tone}">${k.delta}</span>
+      </div>
+      <div class="k-label">${k.label}</div>
+      <div class="k-num num" data-count="${k.num}">0</div>
+      <div class="k-foot"><span class="k-sub">${k.sub}</span><span class="spark-wrap"></span></div>
+    </div>`).join('');
+  renderSparks();
+}
+function renderMatrix(){
+  const maxN = Math.max(...DATA.attackMatrix.flatMap(c=>c.tech.map(t=>t.n)));
+  document.getElementById('matrix').innerHTML = DATA.attackMatrix.map(col=>`
+    <div class="mx-col">
+      <div class="mx-head">${col.tactic}<span class="ph">${col.en}</span></div>
+      ${col.tech.map(t=>{
+        const a = 0.12 + 0.6*(t.n/maxN);
+        return `<div class="mx-cell" style="background:${hexA(cssv('--blue'),a)}">
+          <div class="code" style="color:var(--blue-dark)">${t.id}</div>
+          <div class="nm">${t.nm}</div>
+          <div class="ct">${t.n}건</div>
+        </div>`;
+      }).join('')}
+    </div>`).join('');
+}
+function renderCampaign(){
+  const sevC = s=>cssv('--'+sevVar(s));
+  const lanes = DATA.campaignHosts.map(host=>{
+    const dots = DATA.campaign.filter(c=>c.host===host).map(c=>
+      `<span class="camp-dot" title="${c.label}" style="left:${(c.t/15*100).toFixed(1)}%;background:${sevC(c.sev)}"></span>`).join('');
+    return `<div class="camp-lane"><span class="lane-label">${host}</span><span class="camp-track">${dots}</span></div>`;
+  }).join('');
+  document.getElementById('campaign').innerHTML = lanes;
+  const ev = [...DATA.campaign].sort((a,b)=>a.t-b.t).map(c=>{
+    const tt = '15:'+String(c.t).padStart(2,'0');
+    const file = c.label.replace(/\s\d{2}:\d{2}$/,'');
+    return `<li><span class="ev-dot" style="background:${sevC(c.sev)}"></span><span class="ev-t">${tt}</span><span class="ev-host">${c.host}</span><span>${file} · ${c.sev}</span></li>`;
+  }).join('');
+  document.getElementById('camp-events').innerHTML = ev;
+}
+function chainNode(n){
+  return `<div class="cnode ${n.esc?'esc':''} ${n.blocked?'blocked':''}">
+    <div class="cdot">${n.blocked?'✕':n.step}</div>
+    <div class="cbody">
+      <div class="ctop"><span class="cname">${n.name}</span><span class="cpid">PID ${n.pid} · PPID ${n.ppid}</span></div>
+      <div class="cexe">${n.cmd?n.cmd:n.exe}</div>
+      <div class="cmeta">
+        <span class="ctag ${n.esc?'esc':''}">user ${n.user}</span>
+        ${n.tty?`<span class="ctag">tty ${n.tty}</span>`:''}
+        ${n.tech?`<span class="ctag tech">${n.tech}</span>`:''}
+        ${n.esc?'<span class="ctag esc">권한 상승</span>':''}
+        ${n.blocked?'<span class="ctag blk">차단됨</span>':''}
+      </div>
+      <div class="cnote">${n.note}</div>
+    </div>
+  </div>`;
+}
+function killRibbon(active){
+  const ph = DATA.killPhases;
+  const steps = ph.map((p,i)=>`<span class="kstep ${active.includes(i)?'on':''}">${p}</span>${i<ph.length-1?'<span class="karrow">→</span>':''}`).join('');
+  return `<div class="kill"><span class="kl-label">공격 단계</span>${steps}</div>
+    <div class="kill-cap">왼쪽 → 오른쪽이 공격 진행 순서입니다. <b>파란 단계</b>가 이 사건에서 실제로 시도된 단계예요.</div>`;
+}
+function renderIncidents(){
+  document.getElementById('incidents').innerHTML = DATA.incidents.map((x,idx)=>`
+    <div class="inc">
+      <div class="inc-head">
+        <span class="pill sev-${x.sev}">${x.sev}</span>
+        <div class="inc-main"><div class="inc-path">#${idx+1} ${x.path}</div><div class="inc-desc">${x.desc}</div></div>
+        <div class="inc-meta">${x.host}<br>${x.time}</div>
+        <span class="inc-chev">›</span>
+      </div>
+      <div class="inc-body"><div class="inc-body-inner">
+        <div class="row"><span class="lbl">시도 유형</span><span>${x.type} · ${x.action}</span></div>
+        <div class="row"><span class="lbl">공격 수법</span><span>${x.mitre.map(m=>`<span class="tag">${m}</span>`).join('')}</span></div>
+        <div class="row"><span class="lbl">분석</span><span>${x.detail}</span></div>
+        ${killRibbon(x.kill)}
+        <div class="inc-chain-head">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M6 8.4v3.2a3 3 0 0 0 3 3h6.6M6 14.6v1"/></svg>
+          공격 추적 (PID Chain)
+        </div>
+        <div class="chain">${x.chain.map(chainNode).join('')}</div>
+        <div class="inc-finding"><b>핵심 발견</b> ${x.finding}</div>
+      </div></div>
+    </div>`).join('');
+  document.querySelectorAll('.inc-head').forEach(h=>h.addEventListener('click',()=>h.parentElement.classList.toggle('open')));
+}
+function renderRecs(){
+  const c={crit:'var(--crit)',high:'var(--high)',med:'var(--med)',low:'var(--low)'};
+  document.getElementById('recs').innerHTML = DATA.recs.map(r=>`
+    <div class="rec"><div class="pr" style="background:${c[r.sev]}">${r.p}</div>
+    <div><h4>${r.title}</h4><p>${r.body}</p><div class="when">${r.when}</div><div class="rlink">↳ ${r.link}</div></div></div>`).join('');
+}
+function renderMitreGlossary(){
+  document.getElementById('mitre-list').innerHTML = DATA.mitreGlossary.map(m=>`
+    <div class="mitre-item"><div class="code">${m[0]}</div><div class="mtext"><b>${m[1]}</b><p>${m[2]}</p></div></div>`).join('');
+}
+function countUp(el){
+  const target=+el.dataset.count, dur=1000, t0=performance.now();
+  (function step(t){ const p=Math.min((t-t0)/dur,1), e=1-Math.pow(1-p,3); el.textContent=Math.round(target*e).toLocaleString(); if(p<1) requestAnimationFrame(step); })(t0);
+}
+
+/* ============================== INTERACTIONS ============================== */
+document.getElementById('range-seg').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  document.querySelectorAll('#range-seg button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  document.getElementById('range-dates').classList.toggle('show', b.dataset.range==='custom');
+});
+const io=new IntersectionObserver((ents)=>{ ents.forEach(en=>{ if(en.isIntersecting){ en.target.classList.add('in'); en.target.querySelectorAll('[data-count]').forEach(countUp); io.unobserve(en.target); } }); }, {threshold:.12});
+window.addEventListener('DOMContentLoaded',()=>{
+  renderFindings(); renderKPIs(); renderMatrix(); renderCampaign(); renderIncidents(); renderRecs(); renderMitreGlossary();
+  buildCharts();
+  document.querySelectorAll('.reveal, .stagger').forEach(el=>io.observe(el));
+  document.querySelector('.hero').classList.add('in');
+});
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement, p=h.scrollTop/(h.scrollHeight-h.clientHeight);
+  document.getElementById('progress').style.width=(p*100)+'%';
+  document.getElementById('topbar').classList.toggle('scrolled', h.scrollTop>8);
+});
+</script>
+</body>
+</html>
