@@ -8,6 +8,7 @@ import (
 	"github.com/KN-IG/KN-IG/Backend/internal/api"
 	"github.com/KN-IG/KN-IG/Backend/internal/collector"
 	"github.com/KN-IG/KN-IG/Backend/internal/engine"
+	"github.com/KN-IG/KN-IG/Backend/internal/report"
 	"github.com/KN-IG/KN-IG/Backend/internal/store"
 )
 
@@ -25,6 +26,7 @@ func main() {
 	serverCert := envOr("TLS_CERT", "./certs/server.crt")
 	serverKey := envOr("TLS_KEY", "./certs/server.key")
 	mode := envOr("IG_MODE", "mirror") // mirror | central
+	llmServerURL := envOr("LLM_SERVER_URL", "http://127.0.0.1:8088")
 
 	agentStore := store.NewMySQLAgentStore(db.Conn)
 	eventStore := store.NewMySQLEventStore(db.Conn)
@@ -57,7 +59,10 @@ func main() {
 		log.Printf("Central 모드: 콘솔 PIN 인증 비활성 (IG_MODE=%s)", mode)
 	}
 
-	server := api.NewServer(agentStore, eventStore, alertStore, publisher, auth)
+	reportClient := report.NewClient(llmServerURL)
+	log.Printf("LLM 리포트 서버: %s", llmServerURL)
+
+	server := api.NewServer(agentStore, eventStore, alertStore, publisher, auth, reportClient)
 
 	errCh := make(chan error, 2)
 

@@ -97,24 +97,128 @@
 
             .no-print { display: none !important; }
         }
+
+        /* ===== Top navbar — v1 글래스 스타일 ===== */
+        .ig-topbar { position: sticky; top: 0; z-index: 80; background: color-mix(in srgb, var(--bg) 60%, transparent); -webkit-backdrop-filter: saturate(180%) blur(22px); backdrop-filter: saturate(180%) blur(22px); border-bottom: 1px solid transparent; box-shadow: inset 0 1px 0 var(--glass-hi); transition: border-color .2s; }
+        .ig-topbar.scrolled { border-bottom-color: #e5e7eb; }
+        .dark .ig-topbar.scrolled { border-bottom-color: #374151; }
+        .ig-topbar-inner { max-width: 1152px; margin: 0 auto; padding: 11px 24px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 24px; }
+
+        /* Brand: 로고 타일 + 라벨 */
+        .brand { display: flex; align-items: center; gap: 10px; }
+        .brand .mark { width: 32px; height: 32px; border-radius: 9px; background: #fff; overflow: hidden; display: grid; place-items: center; box-shadow: 0 1px 2px rgba(0,0,0,.05), inset 0 0 0 1px #e8e8ed; flex-shrink: 0; }
+        .brand .mark img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .brand .brand-txt { font-size: 15.5px; font-weight: 600; letter-spacing: -.01em; color: #1d1d1f; line-height: 1.1; }
+        .brand .brand-txt small { display: block; font-size: 11px; font-weight: 400; color: #86868b; margin-top: 1px; }
+        .dark .brand .brand-txt { color: #f9fafb; }
+
+        /* 중앙 탭 (Apple 톤 알약) */
+        #nav-tabs { display: flex; gap: 4px; justify-self: center; }
+        #nav-tabs .nav-tab { padding: 8px 16px; font-size: 14px; font-weight: 500; color: #6b7280; background: none; border: 0; border-radius: 980px; cursor: pointer; transition: color .15s, background .15s; }
+        #nav-tabs .nav-tab:hover { color: #1d1d1f; background: rgba(0,0,0,.04); }
+        .dark #nav-tabs .nav-tab { color: #9ca3af; }
+        .dark #nav-tabs .nav-tab:hover { color: #f9fafb; background: rgba(255,255,255,.06); }
+        #nav-tabs .nav-tab.active { color: #0071e3; background: rgba(0,113,227,.10); }
+        .dark #nav-tabs .nav-tab.active { color: #4593fc; background: rgba(10,132,255,.16); }
+
+        /* 우측 액션 */
+        .header-actions { justify-self: end; display: flex; align-items: center; gap: 10px; }
+        .ig-conn { display: flex; align-items: center; gap: 7px; font-size: 13px; color: #6b7280; }
+        .dark .ig-conn { color: #9ca3af; }
+        .ig-icon-btn { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 980px; border: 1px solid var(--glass-border); background: var(--glass-bg); -webkit-backdrop-filter: saturate(180%) blur(12px); backdrop-filter: saturate(180%) blur(12px); color: var(--ink-soft); cursor: pointer; transition: border-color .15s, color .15s; box-shadow: inset 0 1px 0 var(--glass-hi); }
+        .ig-icon-btn:hover { border-color: var(--blue); color: var(--blue); }
+        .ig-btn-primary { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 500; border: 1px solid #0071e3; background: #0071e3; color: #fff; padding: 8px 15px; border-radius: 980px; cursor: pointer; transition: background .15s, border-color .15s; }
+        .ig-btn-primary:hover { background: #0077ed; border-color: #0077ed; }
+
+        /* Report embed */
+        .report-frame { width: 100%; height: calc(100vh - 58px); border: 0; display: block; }
+
+        /* ===== v1(보고서) 디자인 토큰 — 콘솔 전체 통일 ===== */
+        :root {
+          --bg:#f5f5f7; --surface:#ffffff; --surface-2:#f5f5f7;
+          --ink:#1d1d1f; --ink-soft:#4e5968; --ink-faint:#86868b;
+          --line:#e8e8ed; --blue:#0071e3;
+          --shadow-sm:0 1px 2px rgba(0,0,0,.04), 0 2px 8px rgba(0,0,0,.03);
+          --shadow-md:0 12px 40px -10px rgba(0,0,0,.14);
+          --glass-bg:rgba(255,255,255,.62); --glass-border:rgba(255,255,255,.6); --glass-hi:rgba(255,255,255,.7); --glass-blur:20px;
+          --sans:-apple-system,BlinkMacSystemFont,"Pretendard","Apple SD Gothic Neo","Segoe UI",system-ui,sans-serif;
+        }
+        .dark {
+          --bg:#000000; --surface:#1c1c1e; --surface-2:#2c2c2e;
+          --ink:#f5f5f7; --ink-soft:#a1a1a6; --ink-faint:#86868b;
+          --line:#38383a; --blue:#0a84ff;
+          --shadow-sm:0 1px 2px rgba(0,0,0,.4);
+          --shadow-md:0 12px 40px -10px rgba(0,0,0,.6);
+          --glass-bg:rgba(40,40,46,.55); --glass-border:rgba(255,255,255,.1); --glass-hi:rgba(255,255,255,.06);
+        }
+        body { background: var(--bg) !important; color: var(--ink); font-family: var(--sans); position: relative; }
+        body::before { content:""; position:fixed; inset:0; z-index:-1; pointer-events:none; background:none; }
+        /* 앰비언트 그라데이션은 Report 탭에서만 */
+        body.tab-report::before {
+          background:
+            radial-gradient(60vw 50vh at 12% -6%, rgba(0,113,227,.16), transparent 60%),
+            radial-gradient(55vw 45vh at 92% 4%, rgba(120,80,255,.14), transparent 60%),
+            radial-gradient(60vw 55vh at 78% 96%, rgba(0,199,190,.13), transparent 60%),
+            radial-gradient(50vw 45vh at 4% 92%, rgba(255,120,80,.10), transparent 60%); }
+        .dark body.tab-report::before {
+          background:
+            radial-gradient(60vw 50vh at 12% -6%, rgba(10,132,255,.22), transparent 60%),
+            radial-gradient(55vw 45vh at 92% 4%, rgba(140,90,255,.20), transparent 60%),
+            radial-gradient(60vw 55vh at 78% 96%, rgba(0,210,190,.16), transparent 60%); }
+
+        /* 본문(대시보드)을 v1 톤으로 — main 범위로 한정 (모달/iframe 미포함) */
+        main { color: var(--ink); }
+        main section { background: var(--glass-bg) !important; -webkit-backdrop-filter: saturate(180%) blur(var(--glass-blur)); backdrop-filter: saturate(180%) blur(var(--glass-blur)); border: 1px solid var(--glass-border) !important; border-radius: 18px !important; box-shadow: var(--shadow-md), inset 0 1px 0 var(--glass-hi) !important; }
+        main section > div { background: transparent !important; border-color: var(--line) !important; }
+        main h1, main h2, main h3 { color: var(--ink) !important; }
+        main thead { background: var(--surface-2) !important; }
+        main th { color: var(--ink-faint) !important; border-color: var(--line) !important; }
+        main td { color: var(--ink) !important; border-color: var(--line) !important; }
+        main tr { border-color: var(--line) !important; }
+        main input[type="text"], main .custom-dropdown > button { background: var(--surface) !important; border: 1px solid var(--line) !important; color: var(--ink) !important; }
+        main input[type="text"]::placeholder { color: var(--ink-faint) !important; }
+        main .dropdown-menu { background: var(--surface) !important; border-color: var(--line) !important; }
+        main .dropdown-menu li { color: var(--ink) !important; }
+        main .dropdown-label { color: var(--ink-soft) !important; }
+        main #page-info { color: var(--ink-soft) !important; }
+
+        /* 리포트 모달도 v1 글래스 톤 */
+        #report-modal > div { background: var(--glass-bg) !important; -webkit-backdrop-filter: saturate(180%) blur(var(--glass-blur)); backdrop-filter: saturate(180%) blur(var(--glass-blur)); border: 1px solid var(--glass-border) !important; border-radius: 18px !important; box-shadow: var(--shadow-md), inset 0 1px 0 var(--glass-hi) !important; }
+        #report-modal .border-b, #report-modal .border-t { border-color: var(--line) !important; }
+        #report-modal h3, #report-modal h4 { color: var(--ink) !important; }
+        #report-modal-body { background: transparent !important; }
+        #report-modal .rounded-b-lg { background: transparent !important; }
+        #report-modal-path, #report-modal-host, #report-modal-time, #report-modal-generated { color: var(--ink) !important; }
     </style>
 </head>
 <body class="bg-gray-50 dark:bg-gray-900 min-h-screen transition-colors">
 
     <!-- Header -->
-    <header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-        <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-            <h1 class="text-xl font-bold text-gray-900 dark:text-white">Integrity Guard</h1>
-            <div class="flex items-center gap-4">
-                <div id="connection-status" class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+    <header class="ig-topbar" id="ig-topbar">
+        <div class="ig-topbar-inner">
+            <div class="brand">
+                <span class="mark"><img src="assets/images/kn.png" alt="KN-IG"></span>
+                <div class="brand-txt">KN-IG<small>무결성 보안 리포트</small></div>
+            </div>
+            <div class="nav-tabs" id="nav-tabs">
+                <button class="nav-tab active" data-tab="home">Home</button>
+                <button class="nav-tab" data-tab="report">Report</button>
+                <button class="nav-tab" data-tab="policy">Policy</button>
+                <button class="nav-tab" data-tab="logs">Logs</button>
+            </div>
+            <div class="header-actions">
+                <div id="connection-status" class="ig-conn">
                     <span id="connection-dot" class="w-2 h-2 rounded-full bg-gray-400"></span>
                     <span id="connection-label">Connecting</span>
                 </div>
-                <button id="theme-toggle" class="p-2 rounded-md text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700" title="Toggle theme">
+                <button id="theme-toggle" class="ig-icon-btn" title="Toggle theme">
                     <svg id="icon-sun" class="w-5 h-5 hidden" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M12 3V5.25M18.364 5.63604L16.773 7.22703M21 12H18.75M18.364 18.364L16.773 16.773M12 18.75V21M7.22703 16.773L5.63604 18.364M5.25 12H3M7.22703 7.22703L5.63604 5.63604M15.75 12C15.75 14.0711 14.0711 15.75 12 15.75C9.92893 15.75 8.25 14.0711 8.25 12C8.25 9.92893 9.92893 8.25 12 8.25C14.0711 8.25 15.75 9.92893 15.75 12Z"/></svg>
                     <svg id="icon-moon" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21.7519 15.0021C20.597 15.484 19.3296 15.7501 18 15.7501C12.6152 15.7501 8.25 11.3849 8.25 6.00011C8.25 4.67052 8.51614 3.40308 8.99806 2.24817C5.47566 3.71798 3 7.19493 3 11.2501C3 16.6349 7.36522 21.0001 12.75 21.0001C16.8052 21.0001 20.2821 18.5245 21.7519 15.0021Z"/></svg>
                 </button>
-                <button id="logout-btn" class="p-2 rounded-md text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700" title="Logout">
+                <button id="report-pdf-btn" class="ig-btn-primary" title="PDF 저장" style="display:none">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z"/></svg>PDF 저장
+                </button>
+                <button id="logout-btn" class="ig-icon-btn" title="Logout">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75"/></svg>
                 </button>
             </div>
@@ -128,7 +232,7 @@
         </div>
     </header>
 
-    <main class="max-w-6xl mx-auto px-6 py-6 flex flex-col gap-6">
+    <main id="panel-home" class="tab-panel max-w-6xl mx-auto px-6 py-6 flex flex-col gap-6">
 
         <!-- Agents Card -->
         <section class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
@@ -212,6 +316,27 @@
 
     </main>
 
+    <!-- Report Panel (v2: LLM 서버 실데이터, 실패 시 mock 폴백) -->
+    <main id="panel-report" class="tab-panel hidden">
+        <iframe src="report-demo-v2.html?v=1" class="report-frame" title="KN-IG 보안 리포트" loading="lazy"></iframe>
+    </main>
+
+    <!-- Policy Panel -->
+    <main id="panel-policy" class="tab-panel hidden max-w-6xl mx-auto px-6 py-6">
+        <section class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 px-6 py-16 text-center">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">Policy</h2>
+            <p class="text-sm text-gray-500 dark:text-gray-400">정책 관리 화면은 준비 중입니다.</p>
+        </section>
+    </main>
+
+    <!-- Logs Panel -->
+    <main id="panel-logs" class="tab-panel hidden max-w-6xl mx-auto px-6 py-6">
+        <section class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 px-6 py-16 text-center">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">Logs</h2>
+            <p class="text-sm text-gray-500 dark:text-gray-400">로그 화면은 준비 중입니다.</p>
+        </section>
+    </main>
+
     <!-- Report Modal -->
     <div id="report-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
         <div class="bg-white dark:bg-gray-800 rounded-lg max-w-5xl w-full max-h-[92vh] flex flex-col border border-gray-200 dark:border-gray-700 shadow-2xl">
@@ -262,5 +387,51 @@
     <script src="js/api.js"></script>
     <script src="js/ui.js"></script>
     <script src="js/app.js"></script>
+    <script>
+        // Top nav tab switching
+        (function () {
+            const tabs = document.querySelectorAll('#nav-tabs .nav-tab');
+            const panels = document.querySelectorAll('.tab-panel');
+            const connEl = document.getElementById('connection-status');
+            const logoutEl = document.getElementById('logout-btn');
+            const pdfEl = document.getElementById('report-pdf-btn');
+            function show(name) {
+                tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+                panels.forEach(p => p.classList.toggle('hidden', p.id !== 'panel-' + name));
+                // 우측 액션 스왑: Report = 테마+PDF(v1식), 그 외 = Connecting+로그아웃
+                const isReport = name === 'report';
+                document.body.classList.toggle('tab-report', isReport);
+                if (connEl) connEl.style.display = isReport ? 'none' : '';
+                if (logoutEl) logoutEl.style.display = isReport ? 'none' : '';
+                if (pdfEl) pdfEl.style.display = isReport ? '' : 'none';
+            }
+            tabs.forEach(t => t.addEventListener('click', () => show(t.dataset.tab)));
+            if (pdfEl) pdfEl.addEventListener('click', () => {
+                const f = document.querySelector('.report-frame');
+                if (f && f.contentWindow) f.contentWindow.print();
+            });
+            window.addEventListener('scroll', () => {
+                const tb = document.getElementById('ig-topbar');
+                if (tb) tb.classList.toggle('scrolled', window.scrollY > 4);
+            });
+
+            // 테마를 보고서 iframe까지 동기화 (v1 방식: data-theme + 차트 재채색)
+            function applyTheme() {
+                const isDark = document.documentElement.classList.contains('dark');
+                document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+                const f = document.querySelector('.report-frame');
+                if (f && f.contentDocument && f.contentDocument.documentElement) {
+                    f.contentDocument.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+                    if (f.contentWindow && typeof f.contentWindow.rethemeCharts === 'function') {
+                        try { f.contentWindow.rethemeCharts(); } catch (e) {}
+                    }
+                }
+            }
+            new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+            const rf = document.querySelector('.report-frame');
+            if (rf) rf.addEventListener('load', applyTheme);
+            applyTheme();
+        })();
+    </script>
 </body>
 </html>

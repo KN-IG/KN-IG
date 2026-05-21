@@ -4,37 +4,42 @@ import (
 	"log"
 
 	"github.com/KN-IG/KN-IG/Backend/internal"
+	"github.com/KN-IG/KN-IG/Backend/internal/report"
 	"github.com/gin-gonic/gin"
 )
 
 // Server : REST API 서버
 type Server struct {
-	router     *gin.Engine
-	agentStore internal.AgentStore
-	eventStore internal.EventStore
-	alertStore internal.AlertStore
-	publisher  internal.EventPublisher
-	auth       *MirrorAuth // nil이면 인증 비활성 (central 모드)
+	router       *gin.Engine
+	agentStore   internal.AgentStore
+	eventStore   internal.EventStore
+	alertStore   internal.AlertStore
+	publisher    internal.EventPublisher
+	auth         *MirrorAuth    // nil이면 인증 비활성 (central 모드)
+	reportClient *report.Client // nil이면 리포트 생성 비활성 (LLM_SERVER_URL 미설정)
 }
 
 // NewServer : 서버 생성. auth가 nil이면 /auth/* 미등록, /api/* 미들웨어 미적용.
+// reportClient가 nil이면 POST /api/reports/summary는 503을 반환한다.
 func NewServer(
 	agentStore internal.AgentStore,
 	eventStore internal.EventStore,
 	alertStore internal.AlertStore,
 	publisher internal.EventPublisher,
 	auth *MirrorAuth,
+	reportClient *report.Client,
 ) *Server {
 	router := gin.Default()
 	router.Use(corsMiddleware())
 
 	s := &Server{
-		router:     router,
-		agentStore: agentStore,
-		eventStore: eventStore,
-		alertStore: alertStore,
-		publisher:  publisher,
-		auth:       auth,
+		router:       router,
+		agentStore:   agentStore,
+		eventStore:   eventStore,
+		alertStore:   alertStore,
+		publisher:    publisher,
+		auth:         auth,
+		reportClient: reportClient,
 	}
 
 	s.registerRoutes()
@@ -70,6 +75,9 @@ func (s *Server) registerRoutes() {
 	// Alert API
 	api.GET("/alerts", s.handleListAlerts)
 	api.PATCH("/alerts/:id/resolve", s.handleResolveAlert)
+
+	// Report API (LLM 서버 프록시)
+	api.POST("/reports/summary", s.handleGenerateSummaryReport)
 }
 
 // corsMiddleware : Tauri 콘솔(별 origin)이 직접 호출 가능하도록 허용.

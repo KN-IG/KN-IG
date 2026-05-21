@@ -9,6 +9,16 @@
 <!-- Chart.js -->
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script>
+  /* iframe(콘솔 Report 탭)으로 임베드될 때는 자체 상단바를 숨겨 Navbar 중복 제거.
+     단독 접속(Vercel/직접)에서는 그대로 표시. */
+  if (window.self !== window.top) {
+    document.documentElement.classList.add('embedded');
+    var _embedStyle = document.createElement('style');
+    _embedStyle.textContent = '.topbar{display:none!important}#progress{display:none!important}.hero{padding-top:28px!important}';
+    document.head.appendChild(_embedStyle);
+  }
+</script>
 
 <style>
 /* ============================== TOKENS ============================== */

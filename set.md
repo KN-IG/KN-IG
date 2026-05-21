@@ -98,3 +98,24 @@ sudo rm -f /etc/ig_test_ebpf_renamed.txt
 curl -sS 'http://127.0.0.1:8080/api/events?limit=10' | jq .
 curl -sS 'http://127.0.0.1:8080/api/alerts?limit=10' | jq .
 ```
+
+## 9. (선택) LLM 리포트 서버
+
+콘솔 Report 탭의 기간 종합 리포트를 실데이터로 생성하려면 LLM 서버를 띄운다.
+미가동 시 콘솔은 mock 데이터로 폴백하므로 필수는 아니다.
+
+```bash
+cd KN-IG/LLM
+python -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env        # GEMINI_API_KEY / OPENAI_API_KEY 입력 (없어도 템플릿으로 동작)
+uvicorn app.main:app --port 8088
+```
+
+backend는 `LLM_SERVER_URL`(기본 `http://127.0.0.1:8088`)로 이 서버를 호출한다.
+
+```bash
+curl -sS -X POST 'http://127.0.0.1:8080/api/reports/summary' | jq '.severity, (.incidents|length)'
+```
+
+자세한 내용은 `LLM/README.md` 참고.

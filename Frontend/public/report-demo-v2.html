@@ -8,6 +8,17 @@
 
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<!-- backendUrl 출처 (콘솔 iframe·단독 접속 공통) -->
+<script src="config.js"></script>
+<script>
+  /* iframe(콘솔 Report 탭)으로 임베드될 때는 자체 상단바를 숨겨 Navbar 중복 제거. */
+  if (window.self !== window.top) {
+    document.documentElement.classList.add('embedded');
+    var _embedStyle = document.createElement('style');
+    _embedStyle.textContent = '.topbar{display:none!important}#progress{display:none!important}.hero{padding-top:28px!important}';
+    document.head.appendChild(_embedStyle);
+  }
+</script>
 
 <style>
 /* ============================== TOKENS ============================== */
@@ -466,8 +477,9 @@ footer { margin-top:64px; padding-top:26px; border-top:1px solid var(--line-soft
 </div>
 
 <script>
-/* ============================== MOCK DATA ============================== */
-const DATA = {
+/* ============================== FALLBACK MOCK DATA ==============================
+   Backend(/api/reports/summary → LLM 서버)에서 실데이터를 받지 못할 때만 사용. */
+let DATA = {
   days: ["05-14","05-15","05-16","05-17","05-18","05-19","05-20"],
   blockedBySev: {
     Critical: [1,1,2,1,8,4,3],
@@ -816,11 +828,49 @@ document.getElementById('range-seg').addEventListener('click',e=>{
   document.getElementById('range-dates').classList.toggle('show', b.dataset.range==='custom');
 });
 const io=new IntersectionObserver((ents)=>{ ents.forEach(en=>{ if(en.isIntersecting){ en.target.classList.add('in'); en.target.querySelectorAll('[data-count]').forEach(countUp); io.unobserve(en.target); } }); }, {threshold:.12});
-window.addEventListener('DOMContentLoaded',()=>{
+
+/* ============================== DATA SOURCE ============================== */
+/* 선택된 기간 → {from,to} (RFC3339). custom이면 날짜 입력, 아니면 최근 7일. */
+function currentRange(){
+  const seg = document.querySelector('#range-seg button.active');
+  const mode = seg ? seg.dataset.range : '7d';
+  const ins = document.querySelectorAll('#range-dates input');
+  if (mode === 'custom' && ins.length === 2 && ins[0].value && ins[1].value){
+    return { from:new Date(ins[0].value+'T00:00:00').toISOString(), to:new Date(ins[1].value+'T23:59:59').toISOString() };
+  }
+  const to = new Date();
+  const from = new Date(Date.now() - 7*24*3600*1000);
+  return { from:from.toISOString(), to:to.toISOString() };
+}
+/* Backend(LLM 서버 프록시)에서 실데이터를 받아온다. 실패 시 위의 mock DATA 유지. */
+async function loadData(){
+  try {
+    const base = ((window.IG_CONFIG && window.IG_CONFIG.backendUrl) || '').replace(/\/+$/,'');
+    if (!base) return;
+    const token = localStorage.getItem('ig.session.token');
+    const headers = token ? { Authorization:'Bearer '+token } : {};
+    const { from, to } = currentRange();
+    const url = `${base}/api/reports/summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+    const res = await fetch(url, { method:'POST', headers });
+    if (res.ok){
+      const d = await res.json();
+      if (d && Array.isArray(d.days)) DATA = d;
+    } else {
+      console.warn('report API', res.status, '— mock 데이터로 폴백');
+    }
+  } catch (e){
+    console.warn('report fetch 실패 — mock 데이터로 폴백', e);
+  }
+}
+function renderAll(){
   renderFindings(); renderKPIs(); renderMatrix(); renderCampaign(); renderIncidents(); renderRecs(); renderMitreGlossary();
   buildCharts();
   document.querySelectorAll('.reveal, .stagger').forEach(el=>io.observe(el));
   document.querySelector('.hero').classList.add('in');
+}
+window.addEventListener('DOMContentLoaded', async ()=>{
+  await loadData();
+  renderAll();
 });
 window.addEventListener('scroll',()=>{
   const h=document.documentElement, p=h.scrollTop/(h.scrollHeight-h.clientHeight);

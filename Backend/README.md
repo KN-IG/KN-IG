@@ -54,6 +54,13 @@ frontend에 실시간으로 전달하는 collector backend입니다.
 - `GET /api/events/stream`
 - `GET /api/alerts`
 - `PATCH /api/alerts/:id/resolve`
+- `POST /api/reports/summary`
+
+`POST /api/reports/summary`는 기간 종합 리포트를 생성합니다. `from`/`to`
+(RFC3339, 미지정 시 최근 7일)를 받아 누적 `file_events`/`alerts`/`agents`와
+직전 동일 길이 구간을 모아 LLM 서버(`LLM_SERVER_URL`)로 전달하고, 응답으로 받은
+report 페이지용 DATA(JSON)를 그대로 반환합니다. LLM 서버가 없거나 오류면 `503`을
+반환하며, 콘솔은 mock 데이터로 폴백합니다. LLM 서버는 `LLM/` 디렉터리를 참고하세요.
 
 ## TLS / 인증
 
