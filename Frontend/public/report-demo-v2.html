@@ -862,8 +862,55 @@ async function loadData(){
     console.warn('report fetch 실패 — mock 데이터로 폴백', e);
   }
 }
+/* 정적 마크업(히어로 헤드라인·분석 대상·요약 문단·도넛 중앙/범례·감시 호스트)을
+   실데이터로 바인딩한다. 집계는 severity=차단된 이벤트만 담으므로
+   차단 수 = Σseverity, 변경 시도(분석 대상) = 차단 + 미차단으로 계산한다. */
+function bindSummary(){
+  const sev = DATA.severity || {};
+  const sevTotal = ['Critical','High','Medium','Low'].reduce((a,k)=>a+(+sev[k]||0),0);
+  const kpis = DATA.kpis || [];
+  const numOf = re => { const k = kpis.find(k=>re.test(k.label||'')); return k ? (+k.num||0) : null; };
+  const blocked   = numOf(/차단/)  ?? sevTotal;   // '차단 (사전 차단율)'
+  const unblocked = numOf(/미차단/) ?? 0;          // '미차단 · 확인 필요'
+  const attempts  = blocked + unblocked;
+  const rateStr   = (Math.round((attempts ? blocked/attempts*100 : 100)*10)/10).toString();
+  const crit      = +sev.Critical || 0;
+  const totalK    = kpis.find(k=>/전체 이벤트/.test(k.label||''));
+  const hosts     = (DATA.hosts||[]).length;
+
+  const heroNum = document.querySelector('.hero h1 .num');
+  if (heroNum) heroNum.textContent = blocked.toLocaleString();
+
+  document.querySelectorAll('.hero-meta .chip').forEach(ch=>{
+    const lab = ch.querySelector('.lab');
+    if (lab && /감시 호스트/.test(lab.textContent) && hosts) ch.innerHTML = '<span class="lab">감시 호스트</span>'+hosts+'대';
+  });
+
+  const rc = document.getElementById('range-count');
+  if (rc) rc.textContent = attempts.toLocaleString()+'건';
+
+  const plain = document.querySelector('.plain > div');
+  if (plain){
+    const parts = [`변경 시도 ${attempts.toLocaleString()}건 중 ${blocked.toLocaleString()}건(${rateStr}%)을 사전 차단했습니다.`];
+    if (totalK && totalK.delta && !['—','± 0%','신규'].includes(totalK.delta)) parts.push(`전체 이벤트는 전기간 대비 ${totalK.delta} 수준입니다.`);
+    parts.push(crit>0 ? `치명적 자산 표적 ${crit}건이 확인되어 추가 조사가 필요합니다.` : '치명적 자산 표적은 확인되지 않았습니다.');
+    plain.innerHTML = '<b>요약</b> '+parts.join(' ');
+  }
+
+  const card = document.getElementById('chartSeverity')?.closest('.card');
+  if (card){
+    const big = card.querySelector('.dough-center .big');
+    if (big) big.textContent = sevTotal.toLocaleString();
+    const legend = card.querySelector('.legend');
+    if (legend){
+      legend.innerHTML = [['Critical','--crit'],['High','--high'],['Medium','--med'],['Low','--low']]
+        .map(([k,v])=>`<span><i style="background:var(${v})"></i>${k} ${+sev[k]||0}</span>`).join('');
+    }
+  }
+}
 function renderAll(){
   renderFindings(); renderKPIs(); renderMatrix(); renderCampaign(); renderIncidents(); renderRecs(); renderMitreGlossary();
+  bindSummary();
   buildCharts();
   document.querySelectorAll('.reveal, .stagger').forEach(el=>io.observe(el));
   document.querySelector('.hero').classList.add('in');

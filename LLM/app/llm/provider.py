@@ -29,7 +29,7 @@ def _gemini(prompt: str) -> Optional[str]:
     except ImportError:
         log.warning("google-generativeai not installed; skipping gemini")
         return None
-    model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     # REST transport (not gRPC): fails fast on errors instead of retrying
     # forever, and honours the system/requests CA bundle — more compatible with
     # TLS-inspecting corporate proxies.
