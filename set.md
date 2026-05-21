@@ -32,14 +32,16 @@ AGENT_CA_CERT=../certs/ca.crt
 AGENT_CA_KEY=../certs/generated-legacy/ca.key
 AGENT_CERT_TTL_HOURS=8760
 
-ENROLL_SECRET_PEPPER=<local-pepper>
-ENROLL_KEY_KEK=<local-key-encryption-key>
+ENROLL_SECRET_PEPPER=<openssl-rand-base64-32-output>
+ENROLL_KEY_KEK=<openssl-rand-base64-32-output>
 ```
 
 주의:
 
-- `ENROLL_SECRET_PEPPER`가 없으면 `enroll-token` 발급이 실패한다. 형식은 자유지만 운영에서는 충분히 긴 random secret을 사용한다.
-- `ENROLL_KEY_KEK`는 DB에 저장되는 XOR key ciphertext 암호화용이다. 형식은 자유지만 운영에서는 충분히 긴 random secret을 사용한다.
+- `ENROLL_SECRET_PEPPER`가 없거나 32자 미만이면 `enroll-token` 발급과 Backend 기동이 실패한다.
+- `ENROLL_KEY_KEK`는 DB에 저장되는 XOR key ciphertext 암호화용이다. 표준 base64로 decode했을 때 정확히 32바이트여야 한다.
+- 두 값 모두 placeholder(`change-me`, `example`, `<...>` 등)는 거부된다.
+- 생성 예시: `openssl rand -base64 32`
 - `TLS_CA`, `TLS_CERT`, `TLS_KEY`는 mTLS TCP 서버용
 - `AGENT_CA_CERT`, `AGENT_CA_KEY`는 enrollment 시 Agent 인증서를 서명하는 CA
 
@@ -164,7 +166,7 @@ Backend에서 Agent용 token 발급:
 
 ```bash
 cd Backend
-go run ./cmd/enroll-token -ttl-hours 24
+go run ./cmd/enroll-token -agent-id <agent_id> -ttl-hours 24
 ```
 
 출력 예시:
@@ -175,8 +177,9 @@ XOR_KEY=<xor_key>
 EXPIRES_AT=2026-05-20T18:47:41Z
 ```
 
-`-agent-id`를 지정하면 해당 agent_id로만 enrollment가 가능함
-Agent ID는 Backend/Agent가 `hostname + IP`로 계산한 값
+`-agent-id`는 필수다. 해당 agent_id로만 enrollment가 가능하다.
+Agent ID는 Backend/Agent가 `hostname + IP`로 계산한 값이다.
+개발/테스트에서만 unbound token이 필요하면 `-allow-unbound`를 명시한다.
 
 Agent에 인증서가 없는 상태에서 Agent 서버에서 실행:
 
@@ -229,7 +232,7 @@ XOR enrollment가 필요한 경우:
 
 ```bash
 cd Backend
-go run ./cmd/enroll-token -ttl-hours 1
+go run ./cmd/enroll-token -agent-id <agent_id> -ttl-hours 1
 ```
 
 Agent 서버에서 enrollment 재수행:

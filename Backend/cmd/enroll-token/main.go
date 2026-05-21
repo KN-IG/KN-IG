@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/KN-IG/KN-IG/Backend/internal"
@@ -19,17 +20,25 @@ func main() {
 		log.Fatalf(".env 로드 실패: %v", err)
 	}
 
-	agentID := flag.String("agent-id", "", "사전 지정 agent_id. 비워두면 enrollment 시 hostname/IP로 계산")
+	agentID := flag.String("agent-id", "", "사전 지정 agent_id")
+	allowUnbound := flag.Bool("allow-unbound", false, "개발/테스트용 unbound enrollment token 발급 허용")
 	ttlHours := flag.Int("ttl-hours", 24, "XOR bootstrap key 유효 시간")
 	flag.Parse()
 
 	if *ttlHours <= 0 {
 		log.Fatal("ttl-hours는 1 이상이어야 합니다")
 	}
+	boundAgentID := strings.TrimSpace(*agentID)
+	if boundAgentID == "" && !*allowUnbound {
+		log.Fatal("-agent-id가 필요합니다. 개발/테스트용 unbound token은 -allow-unbound를 명시하세요")
+	}
+	if boundAgentID != "" && *allowUnbound {
+		log.Fatal("-agent-id와 -allow-unbound는 동시에 사용할 수 없습니다")
+	}
 
 	pepper := os.Getenv("ENROLL_SECRET_PEPPER")
-	if pepper == "" {
-		log.Fatal("ENROLL_SECRET_PEPPER 환경변수가 필요합니다")
+	if err := enrollment.ValidateSecretValue("ENROLL_SECRET_PEPPER", pepper, 32); err != nil {
+		log.Fatal(err)
 	}
 	keyVault, err := enrollment.NewKeyVaultFromEnv("ENROLL_KEY_KEK")
 	if err != nil {
@@ -62,7 +71,7 @@ func main() {
 	expiresAt := time.Now().UTC().Add(time.Duration(*ttlHours) * time.Hour)
 	row := internal.Enrollment{
 		EnrollmentID:  enrollmentID,
-		AgentID:       *agentID,
+		AgentID:       boundAgentID,
 		SecretHash:    enrollment.HashXORKey(enrollmentID, xorKey, pepper),
 		KeyCiphertext: keyCiphertext,
 		KeyNonce:      keyNonce,

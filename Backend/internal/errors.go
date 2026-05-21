@@ -7,6 +7,7 @@ var (
 	ErrAgentNotFound            = errors.New("agent not found")
 	ErrAgentOffline             = errors.New("agent offline")
 	ErrAgentCertificateMismatch = errors.New("agent certificate mismatch")
+	ErrAgentCertificateRevoked  = errors.New("agent certificate revoked")
 	ErrAlertNotFound            = errors.New("alert not found")
 	ErrInvalidInput             = errors.New("invalid input")
 	ErrEnrollmentNotFound       = errors.New("enrollment not found")

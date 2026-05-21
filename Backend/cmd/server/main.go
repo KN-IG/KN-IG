@@ -74,8 +74,8 @@ func main() {
 		agentCACert := envOr("AGENT_CA_CERT", caCert)
 		agentCAKey := envOr("AGENT_CA_KEY", "./certs/ca.key")
 		pepper := os.Getenv("ENROLL_SECRET_PEPPER")
-		if pepper == "" {
-			log.Fatal("ENROLL_SECRET_PEPPER 환경변수가 필요합니다")
+		if err := enrollment.ValidateSecretValue("ENROLL_SECRET_PEPPER", pepper, 32); err != nil {
+			log.Fatal(err)
 		}
 		keyVault, err := enrollment.NewKeyVaultFromEnv("ENROLL_KEY_KEK")
 		if err != nil {

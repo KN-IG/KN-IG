@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -50,7 +51,7 @@ func ExtractCN(conn *tls.Conn) (string, error) {
 	return state.PeerCertificates[0].Subject.CommonName, nil
 }
 
-// ExtractPeerIdentity : SAN URI 우선, 없으면 CN을 사용해 에이전트 인증서 identity 추출
+// ExtractPeerIdentity : SPIFFE SAN URI 우선, SAN URI가 없으면 SPIFFE CN fallback 사용
 func ExtractPeerIdentity(conn *tls.Conn) (string, error) {
 	state := conn.ConnectionState()
 	if len(state.PeerCertificates) == 0 {
@@ -89,11 +90,22 @@ func peerIdentityFromCert(cert *x509.Certificate) (string, error) {
 	if cert == nil {
 		return "", fmt.Errorf("에이전트 인증서 없음")
 	}
-	if len(cert.URIs) > 0 {
-		return cert.URIs[0].String(), nil
+	for _, uri := range cert.URIs {
+		identity := uri.String()
+		if isAgentIdentity(identity) {
+			return identity, nil
+		}
 	}
-	if cert.Subject.CommonName != "" {
+	if len(cert.URIs) > 0 {
+		return "", fmt.Errorf("에이전트 인증서 SAN URI에 SPIFFE agent identity가 없음")
+	}
+	if isAgentIdentity(cert.Subject.CommonName) {
 		return cert.Subject.CommonName, nil
 	}
-	return "", fmt.Errorf("에이전트 인증서에 SAN URI 또는 CN이 없음")
+	return "", fmt.Errorf("에이전트 인증서에 SPIFFE agent identity가 없음")
+}
+
+func isAgentIdentity(identity string) bool {
+	suffix := strings.TrimPrefix(identity, agentIdentityPrefix)
+	return suffix != identity && suffix != ""
 }

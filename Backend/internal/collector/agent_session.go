@@ -159,6 +159,14 @@ func (s *AgentSession) handleRegister(hdr *FrameHeader, payload []byte) {
 			)
 			return
 		}
+		if err == internal.ErrAgentCertificateRevoked {
+			s.rejectSession("폐기된 인증서 재사용 -> 등록 거부",
+				"agent_id", s.AgentID,
+				"cert_subject", s.certSubject,
+				"cert_fingerprint", s.certFingerprint,
+			)
+			return
+		}
 		slog.Error("RegisterAgentWithCertificate 실패", "err", err)
 		return
 	}
@@ -182,8 +190,8 @@ func (s *AgentSession) handleRegister(hdr *FrameHeader, payload []byte) {
 }
 
 func (s *AgentSession) certificateIdentityMatchesAgent() bool {
-	if s.certSubject == "" || !strings.HasPrefix(s.certSubject, agentIdentityPrefix) {
-		return true
+	if !isAgentIdentity(s.certSubject) {
+		return false
 	}
 	return strings.TrimPrefix(s.certSubject, agentIdentityPrefix) == s.AgentID
 }

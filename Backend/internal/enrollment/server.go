@@ -71,19 +71,19 @@ func (s *Server) handleConn(raw net.Conn) {
 	row, err := s.enrollments.GetPendingEnrollment(ctx, hello.EnrollmentID, time.Now().UTC())
 	if err != nil {
 		slog.Warn("Agent enrollment 시작 실패", "enrollment_id", hello.EnrollmentID, "err", err)
-		s.writeError(conn, hdr.seqNum, err.Error())
+		s.writeError(conn, hdr.seqNum, "enrollment failed")
 		return
 	}
 	xorKey, err := s.keyVault.Decrypt(row.KeyCiphertext, row.KeyNonce)
 	if err != nil {
 		slog.Warn("Agent enrollment key 복호화 실패", "enrollment_id", hello.EnrollmentID, "err", err)
-		s.writeError(conn, hdr.seqNum, "enrollment key unavailable")
+		s.writeError(conn, hdr.seqNum, "enrollment failed")
 		return
 	}
 	defer ZeroBytes(xorKey)
 	if row.SecretHash != HashXORKey(hello.EnrollmentID, xorKey, s.pepper) {
 		slog.Warn("Agent enrollment key hash 검증 실패", "enrollment_id", hello.EnrollmentID)
-		s.writeError(conn, hdr.seqNum, "enrollment key validation failed")
+		s.writeError(conn, hdr.seqNum, "enrollment failed")
 		return
 	}
 
@@ -142,7 +142,7 @@ func (s *Server) handleConn(raw net.Conn) {
 	resp, err := s.svc.Enroll(ctx, hello.EnrollmentID, row.AgentID, req)
 	if err != nil {
 		slog.Warn("Agent enrollment 실패", "enrollment_id", hello.EnrollmentID, "hostname", req.Hostname, "err", err)
-		s.writeError(conn, reqHdr.seqNum, err.Error())
+		s.writeError(conn, reqHdr.seqNum, "enrollment failed")
 		return
 	}
 	defer ZeroBytes(resp.AgentKeyPEM)

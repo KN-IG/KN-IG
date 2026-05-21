@@ -4,10 +4,10 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // KeyVault encrypts physically delivered XOR keys before DB persistence.
@@ -16,9 +16,12 @@ type KeyVault struct {
 }
 
 func NewKeyVaultFromEnv(envName string) (*KeyVault, error) {
-	raw := os.Getenv(envName)
+	raw := strings.TrimSpace(os.Getenv(envName))
 	if raw == "" {
 		return nil, fmt.Errorf("%s 환경변수가 필요합니다", envName)
+	}
+	if err := ValidateSecretValue(envName, raw, 0); err != nil {
+		return nil, err
 	}
 	return NewKeyVault([]byte(raw))
 }
@@ -27,21 +30,17 @@ func NewKeyVault(raw []byte) (*KeyVault, error) {
 	if len(raw) == 0 {
 		return nil, fmt.Errorf("empty key encryption key")
 	}
-	var material []byte
-	for _, enc := range []*base64.Encoding{
-		base64.RawURLEncoding,
-		base64.URLEncoding,
-		base64.RawStdEncoding,
-		base64.StdEncoding,
-	} {
-		if decoded, err := enc.DecodeString(string(raw)); err == nil && len(decoded) == 32 {
-			material = decoded
-			break
-		}
+	kek := strings.TrimSpace(string(raw))
+	if err := ValidateSecretValue("ENROLL_KEY_KEK", kek, 0); err != nil {
+		return nil, err
 	}
-	if material == nil {
-		sum := sha256.Sum256(raw)
-		material = sum[:]
+	material, err := base64.StdEncoding.Strict().DecodeString(kek)
+	if err != nil {
+		return nil, fmt.Errorf("ENROLL_KEY_KEK must be standard base64 encoded 32 bytes: %w", err)
+	}
+	if len(material) != 32 {
+		ZeroBytes(material)
+		return nil, fmt.Errorf("ENROLL_KEY_KEK must decode to exactly 32 bytes")
 	}
 
 	v := &KeyVault{}

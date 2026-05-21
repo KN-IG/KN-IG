@@ -84,8 +84,35 @@ func ensureMatchingCertificateTx(ctx context.Context, tx *sql.Tx, agentID string
 		return err
 	}
 
+	var boundAgentID string
 	var storedSubjectHash string
 	var storedFingerprint string
+	var storedStatus string
+	fingerprintQuery := `
+		SELECT agent_id, cert_subject_hash, cert_fingerprint, status
+		FROM agent_certificates
+		WHERE cert_fingerprint = ?
+		FOR UPDATE`
+	err := tx.QueryRowContext(ctx, fingerprintQuery, cert.CertFingerprint).Scan(
+		&boundAgentID,
+		&storedSubjectHash,
+		&storedFingerprint,
+		&storedStatus,
+	)
+	switch {
+	case err == nil:
+		if storedStatus != "active" {
+			return internal.ErrAgentCertificateRevoked
+		}
+		if boundAgentID != agentID || storedSubjectHash != cert.CertSubjectHash {
+			return internal.ErrAgentCertificateMismatch
+		}
+		return nil
+	case errors.Is(err, sql.ErrNoRows):
+	default:
+		return err
+	}
+
 	query := `
 		SELECT cert_subject_hash, cert_fingerprint
 		FROM agent_certificates
@@ -94,13 +121,10 @@ func ensureMatchingCertificateTx(ctx context.Context, tx *sql.Tx, agentID string
 		LIMIT 1
 		FOR UPDATE`
 
-	err := tx.QueryRowContext(ctx, query, agentID).Scan(&storedSubjectHash, &storedFingerprint)
+	err = tx.QueryRowContext(ctx, query, agentID).Scan(&storedSubjectHash, &storedFingerprint)
 	switch {
 	case err == nil:
-		if storedSubjectHash != cert.CertSubjectHash || storedFingerprint != cert.CertFingerprint {
-			return internal.ErrAgentCertificateMismatch
-		}
-		return nil
+		return internal.ErrAgentCertificateMismatch
 	case errors.Is(err, sql.ErrNoRows):
 		insert := `
 			INSERT INTO agent_certificates

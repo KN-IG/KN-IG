@@ -25,6 +25,10 @@ bin/
 *.log
 logs/
 
+# Local runtime artifacts
+tmp/
+certs/
+
 # Claude
 .claude/
 .omc/
