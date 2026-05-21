@@ -52,4 +52,4 @@ deploy/verify.sh                     검증
 ## 검증 한계
 
 로컬 검증: `bash -n` · Go linux/amd64 크로스빌드+`vet` · LLM `pytest`+uvicorn 실구동 · openssl mTLS 체인 ·
-**실 Backend 코드로 mTLS 핸드셰이크→REGISTER→FILE_EVENT 통합 테스트**. 실 4 VM의 네트워킹·MySQL 영속·커널 후킹은 `kn-ig --verify`가 책임. 트러블슈팅: [../docs/troubleshooting.md](../docs/troubleshooting.md).
+**실 Backend 코드로 mTLS 핸드셰이크→REGISTER→FILE_EVENT 통합 테스트**. 실 4 VM의 네트워킹·MySQL 영속·커널 후킹은 `kn-ig --verify`가 책임.

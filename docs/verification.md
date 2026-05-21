@@ -33,7 +33,7 @@ kn-ig --verify --event-test    # 이벤트 흐름까지 증명
 ## FAIL 이면
 
 출력의 처방을 따른 뒤 **그 VM에서 `kn-ig` 를 다시 실행**하면 됩니다(멱등).
-로그는 `kn-ig --logs`, 원인 분석은 [troubleshooting.md](troubleshooting.md).
+로그는 `kn-ig --logs` 로 확인하세요.
 
 ## 이벤트 흐름 수동 확인
 
