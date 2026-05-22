@@ -1,0 +1,80 @@
+// 인증 엔드포인트 클라이언트.
+//   GET  /auth/status  → { state: 'unconfigured' | 'configured' | 'locked' }
+//   POST /auth/setup   body { pin } → 201 { token }
+//   POST /auth/login   body { pin } → 200 { token }
+//
+// 원본 이식: Frontend/public/js/auth.js:13-65.
+// 인증 요청은 토큰이 없는 상태에서도 호출되므로 client.ts의 apiFetch(Bearer/401)와
+// 분리한다. Central Server URL은 빌드 시 박힌 config.backendUrl이 절대 출처.
+
+import { config } from "../config";
+
+export type AuthState = "unconfigured" | "configured" | "locked";
+
+export interface AuthStatusResponse {
+  state: AuthState;
+}
+
+export interface AuthTokenResponse {
+  token: string;
+}
+
+// 로그인/셋업 실패를 분류하기 위한 에러 코드(원본 auth.js:59-60).
+export type AuthErrorCode = "invalid_pin" | "locked";
+
+export class AuthError extends Error {
+  status?: number;
+  code?: AuthErrorCode;
+  constructor(message: string, status?: number, code?: AuthErrorCode) {
+    super(message);
+    this.name = "AuthError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+function getBackendURL(): string {
+  return (config.backendUrl || "").replace(/\/+$/, "");
+}
+
+async function authFetch(path: string, opts: RequestInit = {}): Promise<Response> {
+  const base = getBackendURL();
+  if (!base) throw new Error("backend URL not configured");
+  return fetch(base + path, {
+    ...opts,
+    headers: { "Content-Type": "application/json", ...(opts.headers as Record<string, string>) },
+  });
+}
+
+export async function getStatus(): Promise<AuthStatusResponse> {
+  const res = await authFetch("/auth/status");
+  if (!res.ok) throw new Error(`status ${res.status}`);
+  return res.json();
+}
+
+export async function setup(pin: string): Promise<AuthTokenResponse> {
+  const res = await authFetch("/auth/setup", {
+    method: "POST",
+    body: JSON.stringify({ pin }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new AuthError(body.error || `status ${res.status}`, res.status);
+  }
+  return res.json();
+}
+
+export async function login(pin: string): Promise<AuthTokenResponse> {
+  const res = await authFetch("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ pin }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    let code: AuthErrorCode | undefined;
+    if (res.status === 401) code = "invalid_pin";
+    else if (res.status === 423) code = "locked";
+    throw new AuthError(body.error || `status ${res.status}`, res.status, code);
+  }
+  return res.json();
+}
