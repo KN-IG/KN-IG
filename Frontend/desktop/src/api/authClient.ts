@@ -6,6 +6,7 @@
 // 원본 이식: Frontend/public/js/auth.js:13-65.
 // 인증 요청은 토큰이 없는 상태에서도 호출되므로 client.ts의 apiFetch(Bearer/401)와
 // 분리한다. Central Server URL은 빌드 시 박힌 config.backendUrl이 절대 출처.
+// config.useMock(dev)일 때는 백엔드 없이 통과시켜 UI를 테스트한다(아무 4~8자리 PIN 허용).
 
 import { config } from "../config";
 
@@ -33,26 +34,38 @@ export class AuthError extends Error {
   }
 }
 
+const MOCK_TOKEN = "mock-session-token";
+
 function getBackendURL(): string {
   return (config.backendUrl || "").replace(/\/+$/, "");
 }
 
+// 도달 불가 서버에서 무한 대기하지 않도록 8초 타임아웃(AbortController).
 async function authFetch(path: string, opts: RequestInit = {}): Promise<Response> {
   const base = getBackendURL();
   if (!base) throw new Error("backend URL not configured");
-  return fetch(base + path, {
-    ...opts,
-    headers: { "Content-Type": "application/json", ...(opts.headers as Record<string, string>) },
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    return await fetch(base + path, {
+      ...opts,
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json", ...(opts.headers as Record<string, string>) },
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function getStatus(): Promise<AuthStatusResponse> {
+  if (config.useMock) return { state: "configured" };
   const res = await authFetch("/auth/status");
   if (!res.ok) throw new Error(`status ${res.status}`);
   return res.json();
 }
 
 export async function setup(pin: string): Promise<AuthTokenResponse> {
+  if (config.useMock) return { token: MOCK_TOKEN };
   const res = await authFetch("/auth/setup", {
     method: "POST",
     body: JSON.stringify({ pin }),
@@ -65,6 +78,7 @@ export async function setup(pin: string): Promise<AuthTokenResponse> {
 }
 
 export async function login(pin: string): Promise<AuthTokenResponse> {
+  if (config.useMock) return { token: MOCK_TOKEN };
   const res = await authFetch("/auth/login", {
     method: "POST",
     body: JSON.stringify({ pin }),
