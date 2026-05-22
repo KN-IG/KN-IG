@@ -4,10 +4,13 @@
   "version": "0.1.0",
   "identifier": "com.kn-ig.console",
   "build": {
-    "frontendDist": "../../public"
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
   },
   "app": {
-    "withGlobalTauri": true,
+    "withGlobalTauri": false,
     "windows": [
       {
         "title": "KN-IG Console",

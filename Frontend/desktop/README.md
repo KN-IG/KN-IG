@@ -1,6 +1,6 @@
 # KN-IG Console — 데스크톱 (Tauri 2)
 
-관리자 콘솔 GUI. UI 자산은 `../public`(정적), 셸은 Tauri 2.
+관리자 콘솔 GUI. UI는 Vite+React+TS로 빌드(`dist/`), 셸은 Tauri 2.
 설치파일을 **로컬에서 원할 때 빌드**해 사용자에게 **직접 전달**합니다.
 
 ## 빌드 (Mac · Windows 동일)
