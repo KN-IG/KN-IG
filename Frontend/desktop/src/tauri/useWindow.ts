@@ -30,6 +30,21 @@ export async function setMainSize(): Promise<void> {
   await safeInvoke("set_window_main");
 }
 
+// 보고서 인쇄. macOS WKWebView는 window.print() 미지원이라 Rust print_report(NSPrintOperation)로 위임.
+// 브라우저(non-Tauri) 또는 invoke 실패 시 window.print() 폴백.
+export async function printReport(): Promise<void> {
+  if (!isTauri()) {
+    window.print();
+    return;
+  }
+  try {
+    await invoke("print_report");
+  } catch (err) {
+    console.error("print_report failed:", err);
+    window.print();
+  }
+}
+
 // 컴포넌트에서 창 전환 함수를 받는 훅(안정 참조).
 export function useWindow() {
   return { setLoginSize, setMainSize };
