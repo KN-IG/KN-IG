@@ -147,7 +147,7 @@ type AlertStore interface {
 	ResolveAlert(ctx context.Context, alertID int64) error
 }
 
-// AuthStore : Mirror 모드 콘솔 PIN 해시 저장 (singleton row)
+// AuthStore : 콘솔 PIN 해시 저장 (singleton row)
 // 구현 : internal/store/auth_store.go
 type AuthStore interface {
 	// GetPINHash : 현재 PIN 해시. 미설정 시 ""(nil err) 반환.

@@ -48,7 +48,7 @@ CREATE INDEX idx_alerts_agent_id ON alerts(agent_id);
 CREATE INDEX idx_alerts_resolved ON alerts(resolved);
 CREATE INDEX idx_alerts_severity ON alerts(severity);
 
--- ── 인증 (Mirror 모드 콘솔 PIN) ───────────────────────────────────
+-- ── 인증 (콘솔 PIN) ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS auth_state (
     id         TINYINT      PRIMARY KEY,
     pin_hash   VARCHAR(60)  NOT NULL,

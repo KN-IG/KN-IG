@@ -13,23 +13,23 @@ tailwind.* 스타일
 
 ## 빌드
 
-사전: Node 18+, Rust toolchain, Xcode CLI tools(macOS).
+사전: Node(LTS+), Rust toolchain. Mac은 Xcode CLT, Windows는 MSVC Build Tools.
 
-| 작업 | 명령 |
+| 작업 (`cd desktop`) | 명령 |
 |---|---|
-| dev | `cd desktop && npm run tauri dev` |
+| 개발 실행 | `npm run dev` |
 | Tailwind watch | `npx tailwindcss -i tailwind.input.css -o public/assets/tailwind.css --watch` |
-| 릴리스(.app/.dmg) | `cd desktop && npm run tauri build` |
+| 설치파일 빌드 | `npm run build` |
 
-산출물: `desktop/src-tauri/target/release/bundle/{macos/KN-IG Console.app, dmg/*.dmg}`.
-Universal: `rustup target add x86_64-apple-darwin` 후 `npm run tauri build -- --target universal-apple-darwin`.
+산출물 `desktop/src-tauri/target/release/bundle/`: Mac=`dmg/*.dmg`, Windows=`nsis/*-setup.exe`+`msi/*.msi`.
+크로스 빌드 불가(각 OS에서 빌드). 자세한 빌드·배포는 [desktop/README.md](desktop/README.md).
 
 ## 설정 — `public/config.js`
 
 사이트별 단일 출처(UI 수정 불가, 빌드 직전 편집):
 
 ```js
-window.IG_CONFIG = { backendUrl: "http://192.168.64.10:8080" };  // Mirror Server URL
+window.IG_CONFIG = { backendUrl: "http://192.168.64.10:8080" };  // Central Server URL
 ```
 빈 값/도달 실패 → `Connection error` + Retry. 고객별은 `customer/<name>` 브랜치에서 수정 후 빌드.
 
@@ -37,7 +37,7 @@ window.IG_CONFIG = { backendUrl: "http://192.168.64.10:8080" };  // Mirror Serve
 
 상태 머신: `load → /auth/status → { setup | login | locked } → index.html`
 
-| Mirror Server endpoint | 응답 |
+| Central Server endpoint | 응답 |
 |---|---|
 | `GET /auth/status` | `{ state: unconfigured\|configured\|locked }` |
 | `POST /auth/setup` | `{pin}` → `201 {token}` (최초 1회) |

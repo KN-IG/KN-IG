@@ -77,12 +77,9 @@ cmd_status() {
             tp="$(read_env_val "$REPO/Backend/.env" TCP_ADDR)";  tp="${tp##*:}"; tp="${tp:-9000}"
             lurl="$(read_env_val "$REPO/Backend/.env" LLM_SERVER_URL)"; lurl="${lurl:-http://127.0.0.1:8088}"
             { svc_active mysql || svc_active mariadb || svc_active mysqld; } && ok "MySQL/MariaDB 구동 중" || warn "DB 서비스 비활성"
-            if http_ok "http://127.0.0.1:${hp}/api/agents"; then
-                ok "HTTP API :${hp} 정상"
-                if have jq; then
-                    local n; n="$(curl -s --max-time 5 "http://127.0.0.1:${hp}/api/agents" 2>/dev/null | jq 'if type=="array" then length else 0 end' 2>/dev/null)"
-                    log "    등록 에이전트: ${n:-0}대"
-                fi
+            if http_ok "http://127.0.0.1:${hp}/auth/status"; then
+                ok "HTTP API :${hp} 정상 (인증 활성)"
+                log "    에이전트/이벤트는 콘솔 로그인 후 확인 (/api 인증 필요)"
             else warn "HTTP API :${hp} 미응답"; fi
             tcp_open 127.0.0.1 "$tp" 3 && ok "Agent collector :${tp} 리슨" || warn "collector :${tp} 미응답"
             http_ok "${lurl}/health" && ok "LLM 도달: ${lurl}" || warn "LLM 미도달: ${lurl} (리포트 외 기능 정상)"

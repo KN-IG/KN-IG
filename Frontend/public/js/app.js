@@ -32,7 +32,7 @@ const App = {
         Theme.init();
 
         await this.refreshAndRender();
-        // 주기적으로 Mirror Server 데이터 동기화
+        // 주기적으로 Central Server 데이터 동기화
         setInterval(() => this.refreshAndRender().catch(err => console.error("refresh failed", err)), this.refreshIntervalMs);
 
         document.getElementById("search-path").addEventListener("input", () => this.resetAndRender());

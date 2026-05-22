@@ -15,18 +15,18 @@ type Server struct {
 	eventStore   internal.EventStore
 	alertStore   internal.AlertStore
 	publisher    internal.EventPublisher
-	auth         *MirrorAuth    // nil이면 인증 비활성 (central 모드)
+	auth         *Auth          // 콘솔 PIN 인증 (항상 활성)
 	reportClient *report.Client // nil이면 리포트 생성 비활성 (LLM_SERVER_URL 미설정)
 }
 
-// NewServer : 서버 생성. auth가 nil이면 /auth/* 미등록, /api/* 미들웨어 미적용.
+// NewServer : 서버 생성. /auth/* 등록 + /api/* 콘솔 PIN 인증(Bearer).
 // reportClient가 nil이면 POST /api/reports/summary는 503을 반환한다.
 func NewServer(
 	agentStore internal.AgentStore,
 	eventStore internal.EventStore,
 	alertStore internal.AlertStore,
 	publisher internal.EventPublisher,
-	auth *MirrorAuth,
+	auth *Auth,
 	reportClient *report.Client,
 ) *Server {
 	router := gin.Default()
@@ -49,18 +49,14 @@ func NewServer(
 
 // registerRoutes : API 엔드포인트 등록
 func (s *Server) registerRoutes() {
-	if s.auth != nil {
-		// Mirror 모드: 인증 endpoint (자체적으로 인증 불필요)
-		authGrp := s.router.Group("/auth")
-		authGrp.GET("/status", s.auth.Status)
-		authGrp.POST("/setup", s.auth.Setup)
-		authGrp.POST("/login", s.auth.Login)
-	}
+	// 콘솔 PIN 인증 endpoint (자체적으로 인증 불필요)
+	authGrp := s.router.Group("/auth")
+	authGrp.GET("/status", s.auth.Status)
+	authGrp.POST("/setup", s.auth.Setup)
+	authGrp.POST("/login", s.auth.Login)
 
 	api := s.router.Group("/api")
-	if s.auth != nil {
-		api.Use(s.auth.Authorize)
-	}
+	api.Use(s.auth.Authorize)
 
 	// Agent API
 	api.GET("/agents", s.handleListAgents)

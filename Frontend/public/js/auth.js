@@ -1,11 +1,11 @@
 // Auth flow for IG Console
 //
-// Mirror Server URL은 빌드 시 박힌 config.js의 IG_CONFIG.backendUrl을 절대 출처로 사용.
+// Central Server URL은 빌드 시 박힌 config.js의 IG_CONFIG.backendUrl을 절대 출처로 사용.
 // 사용자 측에서 URL을 변경할 수 없음 — 미설정/도달 실패 시 config-error 화면(재시도 버튼).
 //
 // 상태 머신: load → /auth/status → { setup | login | locked } → success → /index.html
 //
-// Mirror Server endpoints:
+// Central Server endpoints:
 //   GET  /auth/status   → { state: 'unconfigured' | 'configured' | 'locked' }
 //   POST /auth/setup    body { pin } → 201 { token }
 //   POST /auth/login    body { pin } → 200 { token }
@@ -196,7 +196,7 @@ async function loadStatusAndRender() {
         const { state } = await Auth.getStatus();
         renderMode(state);
     } catch (err) {
-        showConfigError('Cannot reach Mirror Server. Check your network and retry.');
+        showConfigError('Cannot reach Central Server. Check your network and retry.');
     }
 }
 

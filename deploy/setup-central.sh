@@ -5,7 +5,7 @@
 #   2) MySQL/MariaDB  (debian=mysql / rhel=mariadb 자동)
 #   3) DB/계정/스키마 (멱등: 테이블 카운트 체크, localhost+127.0.0.1 양쪽 계정)
 #   4) mTLS 인증서    (CA 보존, 중앙 호스트 SAN 미포함 시에만 server 재서명 → IP변경 안전)
-#   5) Backend/.env   (DATABASE_URL/TLS_*/LLM_SERVER_URL/IG_MODE=central)
+#   5) Backend/.env   (DATABASE_URL/TLS_*/LLM_SERVER_URL)
 #   6) go build       (서비스용 바이너리 + 컴파일 사전검증)
 #   7) systemd 서비스 + 방화벽
 #   8) 검증           (MySQL ping / 포트 / /api/agents)
@@ -247,13 +247,11 @@ TCP_ADDR=:${TCP_PORT}
 TLS_CA=./certs/ca.crt
 TLS_CERT=./certs/server.crt
 TLS_KEY=./certs/server.key
-# 중앙 서버 모드(콘솔 PIN 인증 비활성). 데스크톱 미러 콘솔이면 mirror 로 변경.
-IG_MODE=central
 # LLM 리포트 서버 위치(별도 VM). 미가동이어도 백엔드는 기동되며 리포트만 503→콘솔 mock 폴백.
 LLM_SERVER_URL=${LLM_URL}
 EOF
 chmod 600 "$ENV_FILE" 2>/dev/null || true
-ok ".env 작성 — LLM_SERVER_URL=${LLM_URL}, IG_MODE=central"
+ok ".env 작성 — LLM_SERVER_URL=${LLM_URL}"
 
 step "6/8 go build"
 mark "go build 실패 — 컴파일 오류 또는 모듈 다운로드(GOPROXY/인터넷) 문제"
