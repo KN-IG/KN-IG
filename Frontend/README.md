@@ -5,10 +5,10 @@ KN-IG 콘솔(브라우저 + Tauri 데스크톱)의 UI 레이어. 데이터 흐�
 ## 구성
 
 ```
-public/    정적 자산(Tauri가 wrap): index.html(대시보드)·login.html(PIN)·config.js
-  js/      api.js(REST+Bearer)·app.js(라우팅·5초 refresh)·ui.js·auth.js
-desktop/   Tauri 2 데스크톱 셸
-tailwind.* 스타일
+public/       이식 원본·롤백 안전판(P7 최종 정리까지 보존)
+desktop/      Tauri 2 데스크톱 셸 + Vite React SPA
+  src/        React+TS 소스 (Vite JIT Tailwind 포함)
+  src-tauri/  Rust/Tauri 설정·명령
 ```
 
 ## 빌드
@@ -17,9 +17,10 @@ tailwind.* 스타일
 
 | 작업 (`cd desktop`) | 명령 |
 |---|---|
-| 개발 실행 | `npm run dev` |
-| Tailwind watch | `npx tailwindcss -i tailwind.input.css -o public/assets/tailwind.css --watch` |
-| 설치파일 빌드 | `npm run build` |
+| 개발 실행 (Vite + Tauri) | `npm run dev` |
+| 설치파일 빌드 (Vite + Tauri) | `npm run build` |
+
+Tailwind는 Vite JIT 파이프라인이 처리합니다. 별도 watch 명령은 불필요합니다.
 
 산출물 `desktop/src-tauri/target/release/bundle/`: Mac=`dmg/*.dmg`, Windows=`nsis/*-setup.exe`+`msi/*.msi`.
 크로스 빌드 불가(각 OS에서 빌드). 자세한 빌드·배포는 [desktop/README.md](desktop/README.md).
