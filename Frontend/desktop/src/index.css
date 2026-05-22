@@ -1,0 +1,165 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  디자인 토큰 — HSL 단일출처 (P3 CRITICAL).
+
+  원본: Frontend/public/index.html:137-153 의 글래스 CSS 변수(hex/rgba).
+  여기서는 색상을 HSL 채널(`H S% L%`)로 *재정의*하여 shadcn/ui 변수가
+  `hsl(var(--token))` 패턴으로 단일출처를 참조하게 한다.
+
+  차원 분리(이중 정의 금지):
+    - 색상 채널  → HSL 단일출처 (--background, --card, --primary, ...)
+    - 알파/blur  → 별도 유틸 토큰 (--glass-*-alpha, --glass-blur)
+    - 글래스 표면 → 색 채널 + 알파의 *합성*으로만 표현 (.glass-surface 등)
+  글래스 rgba를 별도로 두지 않는다(= shadcn HSL과 이중 정의 0건).
+*/
+
+@layer base {
+  :root {
+    /* ── 색상 채널 (HSL 단일출처) — 라이트 ────────────────────────── */
+    --background: 240 11% 97%;          /* 원본 --bg #f5f5f7 */
+    --foreground: 240 3% 12%;           /* 원본 --ink #1d1d1f */
+
+    --card: 0 0% 100%;                  /* 원본 --surface #ffffff */
+    --card-foreground: 240 3% 12%;      /* --ink */
+
+    --popover: 0 0% 100%;               /* --surface */
+    --popover-foreground: 240 3% 12%;   /* --ink */
+
+    --primary: 210 100% 44%;            /* 원본 --blue #0071e3 */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 240 11% 97%;           /* 원본 --surface-2 #f5f5f7 */
+    --secondary-foreground: 240 3% 12%; /* --ink */
+
+    --muted: 240 11% 97%;               /* --surface-2 */
+    --muted-foreground: 240 2% 54%;     /* 원본 --ink-faint #86868b */
+
+    --accent: 240 11% 97%;              /* --surface-2 */
+    --accent-foreground: 240 3% 12%;    /* --ink */
+
+    --destructive: 0 84% 60%;           /* 글래스 토큰 부재 → 신규 HSL 1건 */
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 240 12% 92%;              /* 원본 --line #e8e8ed */
+    --input: 240 12% 92%;               /* --line */
+    --ring: 210 100% 44%;               /* --blue */
+
+    /* 보조 잉크 톤(원본 --ink-soft #4e5968) — 캡션/연결상태 등 */
+    --ink-soft: 215 14% 36%;
+
+    /* 차트 색(P4 recharts에서 소비) — primary 계열 + 보조 */
+    --chart-1: 210 100% 44%;
+    --chart-2: 174 100% 39%;            /* teal 계열 (앰비언트 톤) */
+    --chart-3: 258 90% 66%;             /* violet 계열 */
+    --chart-4: 18 100% 66%;             /* orange 계열 */
+    --chart-5: 240 2% 54%;              /* neutral */
+
+    --radius: 0.75rem;
+
+    /* ── 알파/blur (별도 유틸 토큰, 색과 차원 분리) — 라이트 ────────── */
+    --glass-alpha: 0.62;                /* 원본 --glass-bg rgba(255,255,255,.62) */
+    --glass-border-alpha: 0.6;          /* 원본 --glass-border rgba(255,255,255,.6) */
+    --glass-hi-alpha: 0.7;              /* 원본 --glass-hi rgba(255,255,255,.7) */
+    --glass-blur: 20px;                 /* 원본 --glass-blur */
+    --topbar-alpha: 0.6;                /* 원본 ig-topbar color-mix 60% */
+    --topbar-blur: 22px;
+
+    /* 그림자(원본 --shadow-*) */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.03);
+    --shadow-md: 0 12px 40px -10px rgba(0, 0, 0, 0.14);
+
+    /* 한국어 시스템 폰트 폴백(원본 --sans). 외부 @import 없음. */
+    --sans: -apple-system, BlinkMacSystemFont, "Pretendard",
+      "Apple SD Gothic Neo", "Segoe UI", system-ui, sans-serif;
+  }
+
+  .dark {
+    /* ── 색상 채널 (HSL 단일출처) — 다크 ──────────────────────────── */
+    --background: 0 0% 0%;              /* 원본 다크 --bg #000000 */
+    --foreground: 240 11% 97%;         /* 원본 다크 --ink #f5f5f7 */
+
+    --card: 240 3% 11%;                /* 원본 다크 --surface #1c1c1e */
+    --card-foreground: 240 11% 97%;
+
+    --popover: 240 3% 11%;             /* --surface */
+    --popover-foreground: 240 11% 97%;
+
+    --primary: 210 100% 52%;           /* 원본 다크 --blue #0a84ff */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 240 2% 18%;           /* 원본 다크 --surface-2 #2c2c2e */
+    --secondary-foreground: 240 11% 97%;
+
+    --muted: 240 2% 18%;               /* --surface-2 */
+    --muted-foreground: 240 2% 54%;    /* 원본 다크 --ink-faint #86868b */
+
+    --accent: 240 2% 18%;              /* --surface-2 */
+    --accent-foreground: 240 11% 97%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 240 2% 22%;              /* 원본 다크 --line #38383a */
+    --input: 240 2% 22%;               /* --line */
+    --ring: 210 100% 52%;              /* --blue */
+
+    --ink-soft: 240 3% 64%;            /* 원본 다크 --ink-soft #a1a1a6 */
+
+    --chart-1: 210 100% 52%;
+    --chart-2: 174 100% 41%;
+    --chart-3: 258 90% 70%;
+    --chart-4: 18 100% 66%;
+    --chart-5: 240 3% 64%;
+
+    /* ── 알파/blur — 다크 (색 채널은 위 단일출처 참조, 알파만 재정의) ── */
+    --glass-alpha: 0.55;               /* 원본 다크 --glass-bg rgba(40,40,46,.55) */
+    --glass-border-alpha: 0.1;         /* 원본 다크 --glass-border rgba(255,255,255,.1) */
+    --glass-hi-alpha: 0.06;            /* 원본 다크 --glass-hi rgba(255,255,255,.06) */
+    /* --glass-blur 동일(20px) */
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 12px 40px -10px rgba(0, 0, 0, 0.6);
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--sans);
+  }
+}
+
+@layer components {
+  /*
+    글래스 표면 — 색 채널(HSL 단일출처) + 알파의 합성. rgba 하드코딩 없음.
+    원본 글래스 카드(index.html:171)·모달(:186) 톤을 재현.
+
+    글래스 보더는 원본이 흰색 채널 고정(rgba(255,255,255,...))이라
+    --card가 아닌 흰색(0 0% 100%) + --glass-border-alpha로 합성.
+    하이라이트(inset)도 동일하게 흰색 채널 + --glass-hi-alpha.
+  */
+  .glass-surface {
+    background: hsl(var(--card) / var(--glass-alpha));
+    border: 1px solid hsl(0 0% 100% / var(--glass-border-alpha));
+    border-radius: 18px;
+    box-shadow: var(--shadow-md), inset 0 1px 0 hsl(0 0% 100% / var(--glass-hi-alpha));
+    -webkit-backdrop-filter: saturate(180%) blur(var(--glass-blur));
+    backdrop-filter: saturate(180%) blur(var(--glass-blur));
+  }
+
+  /*
+    상단 navbar — 원본 .ig-topbar(index.html:102) 톤.
+    배경은 --background 채널 + --topbar-alpha 합성(color-mix 대체).
+  */
+  .glass-topbar {
+    background: hsl(var(--background) / var(--topbar-alpha));
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / var(--glass-hi-alpha));
+    -webkit-backdrop-filter: saturate(180%) blur(var(--topbar-blur));
+    backdrop-filter: saturate(180%) blur(var(--topbar-blur));
+  }
+}
