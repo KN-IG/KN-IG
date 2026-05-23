@@ -81,7 +81,7 @@ collector는 mTLS를 사용합니다.
 
 ```env
 DATABASE_URL=root@tcp(127.0.0.1:3306)/integrityguard?parseTime=true
-HTTP_ADDR=:18080
+HTTP_ADDR=:8080
 TCP_ADDR=:9000
 TLS_CA=/abs/path/ca.crt
 TLS_CERT=/abs/path/server.crt

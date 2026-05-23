@@ -177,6 +177,8 @@ if [[ "$BACKEND" == "lkm" ]]; then
     moddir="/lib/modules/$(uname -r)/extra"
     $SUDO install -D -m 0644 "$KO" "${moddir}/ig_lkm.ko"
     $SUDO depmod -a 2>/dev/null || true
+    # 구형 배포판은 /etc/modules-load.d 가 없을 수 있음 — 먼저 생성(부팅 자동 로드용, systemd-modules-load)
+    $SUDO mkdir -p /etc/modules-load.d
     echo "ig_lkm" | $SUDO tee /etc/modules-load.d/ig_lkm.conf >/dev/null
     if lsmod 2>/dev/null | grep -q '^ig_lkm'; then
         ok "ig_lkm 이미 로드됨"
@@ -235,8 +237,44 @@ EOF
     $SUDO systemctl restart integrityguard.service
     sleep 2
     ok "서비스 상태: $($SUDO systemctl is-active integrityguard.service 2>/dev/null || echo unknown) (mode=${MODE})"
+elif [[ "$WITH_SERVICE" -eq 1 ]]; then
+    # systemd 미사용(upstart/sysvinit, 예: Ubuntu 14.04) — SysV init.d로 설치/기동.
+    # 에이전트는 -f 없으면 자체 데몬화하며 /tmp/ig_monitor.pid 를 기록한다.
+    step "5/6 systemd 미사용 — init.d 서비스 설치"
+    ig_install_stdin /etc/init.d/integrityguard 0755 root:root <<EOF
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          integrityguard
+# Required-Start:    \$network \$remote_fs
+# Required-Stop:     \$network \$remote_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: KN-IG Integrity Guard Agent
+### END INIT INFO
+DAEMON=/usr/local/bin/agent
+CONF=/etc/ig_monitor/ig.conf
+PIDFILE=/tmp/ig_monitor.pid
+MODE=${MODE}
+running() { [ -f "\$PIDFILE" ] && kill -0 "\$(cat "\$PIDFILE" 2>/dev/null)" 2>/dev/null; }
+case "\$1" in
+  start)   running && { echo "already running"; exit 0; }; "\$DAEMON" -c "\$CONF" -m "\$MODE" && echo "started (mode=\$MODE)" ;;
+  stop)    running && kill "\$(cat "\$PIDFILE")" 2>/dev/null; rm -f "\$PIDFILE"; echo "stopped" ;;
+  restart) "\$0" stop; sleep 1; "\$0" start ;;
+  status)  if running; then echo "running (pid \$(cat "\$PIDFILE"))"; else echo "not running"; exit 3; fi ;;
+  *)       echo "Usage: \$0 {start|stop|restart|status}"; exit 1 ;;
+esac
+EOF
+    if   have update-rc.d; then $SUDO update-rc.d integrityguard defaults >/dev/null 2>&1 || true
+    elif have chkconfig;  then $SUDO chkconfig --add integrityguard 2>/dev/null || true; fi
+    $SUDO /etc/init.d/integrityguard restart 2>/dev/null || $SUDO /etc/init.d/integrityguard start || true
+    sleep 2
+    if /etc/init.d/integrityguard status >/dev/null 2>&1; then
+        ok "integrityguard 실행 중 (init.d, mode=${MODE})"
+    else
+        warn "integrityguard 미기동 — 로그 확인: tail /var/log/ig_monitor.log"
+    fi
 else
-    step "5/6 systemd 미사용 — 수동 실행 안내"
+    step "5/6 서비스 설치 생략(--no-service) — 수동 실행 안내"
     log "  sudo /usr/local/bin/agent -f -c /etc/ig_monitor/ig.conf -m ${MODE}"
 fi
 

@@ -90,6 +90,7 @@ type FileEventMsg struct {
 	DetectedBy     uint8
 	Pid            uint32
 	Timestamp      uint32
+	Blocked        uint8 // v2: 차단(lock) 여부. v1 에이전트는 0.
 }
 
 // 바이너리 읽기 헬퍼
@@ -353,6 +354,17 @@ func DecodeFileEvent(data []byte) (*FileEventMsg, error) {
 		return nil, err
 	}
 
+	// v2 확장(있으면): target_dev(u64) target_ino(u64) blocked(u8) ...
+	// v1 에이전트는 이 필드가 없으므로 남은 바이트가 충분할 때만 읽는다(하위호환).
+	var blocked uint8
+	if r.remaining() >= 17 {
+		_, _ = r.readU64() // target_dev (현재 미사용)
+		_, _ = r.readU64() // target_ino (현재 미사용)
+		if b, e := r.readU8(); e == nil {
+			blocked = b
+		}
+	}
+
 	return &FileEventMsg{
 		AgentID:        agentID,
 		EventType:      evtType,
@@ -362,6 +374,7 @@ func DecodeFileEvent(data []byte) (*FileEventMsg, error) {
 		DetectedBy:     detectedBy,
 		Pid:            pid,
 		Timestamp:      timestamp,
+		Blocked:        blocked,
 	}, nil
 }
 

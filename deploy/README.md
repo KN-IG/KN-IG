@@ -9,7 +9,7 @@
 | Agent | `sudo ./kn-ig --agent <중앙IP>` | — | 중앙 `:9000` |
 
 - 검증: `kn-ig --verify` → **FAIL=0** 이면 콘솔↔중앙↔DB · 중앙↔LLM · Agent↔중앙 동작.
-- 운영(역할 자동 감지): `kn-ig`(상태) · `--status` · `--logs [-f]` · `--uninstall [--purge]`
+- 운영(역할 자동 감지): `kn-ig`(상태) · `--status` · `--logs [-f]` · `--update`(git pull+재배포) · `--uninstall [--purge]`
 - 검증 순서·실패 대응: **[../docs/verification.md](../docs/verification.md)**
 
 > `agent_id = hash(hostname+IP)` 라 Agent는 IP만 달라도 자동으로 다른 ID. 인증서는 공용.
@@ -22,6 +22,25 @@
 --agent <IP> --certs <DIR>  # 물리 제공 인증서 경로 (기본 Agent/certs)
 --agent <IP> --mode lock    # 즉시 차단 (기본 maintenance=감사)
 ```
+
+## LLM API 키 (선택 — `kn-ig --llm` 전에)
+
+키가 없어도 템플릿 서술로 리포트는 정상이며, 키를 넣으면 서술 품질만 올라갑니다.
+`kn-ig --llm`은 **기존 `LLM/.env`를 보존(덮어쓰지 않음)**, 없으면 `cluster.env` 키로 생성합니다.
+
+```bash
+# 방법 A — LLM/.env 미리 작성 (간단)
+cp LLM/.env.example LLM/.env
+# LLM/.env 편집: GEMINI_API_KEY=... (또는 OPENAI_API_KEY=...)
+
+# 방법 B — cluster.env에 넣기 (.env 없을 때만 반영)
+echo 'IG_GEMINI_API_KEY=...' >> cluster.env
+
+sudo ./kn-ig --llm
+curl -s localhost:8088/health   # "llm_provider_configured":true 면 키 인식
+```
+이미 `.env`가 생성됐다면 `LLM/.env` 직접 편집 후 `sudo systemctl restart kn-ig-llm`.
+키는 `LLM/.env`·`cluster.env`에만 — git 커밋 금지.
 
 ## 인증서 (물리 부트스트랩)
 
@@ -53,3 +72,17 @@ deploy/verify.sh                     검증
 
 로컬 검증: `bash -n` · Go linux/amd64 크로스빌드+`vet` · LLM `pytest`+uvicorn 실구동 · openssl mTLS 체인 ·
 **실 Backend 코드로 mTLS 핸드셰이크→REGISTER→FILE_EVENT 통합 테스트**. 실 4 VM의 네트워킹·MySQL 영속·커널 후킹은 `kn-ig --verify`가 책임.
+
+## 트러블슈팅
+
+**`git clone` → `server certificate verification failed`** (주로 구형/EOL Agent VM)
+GitHub 인증서 검증 실패. 원인은 시스템 시계 오차 또는 CA 번들 노후입니다.
+```bash
+date                                          # 시간이 틀리면: sudo timedatectl set-ntp true
+sudo apt-get install --reinstall -y ca-certificates && sudo update-ca-certificates
+```
+EOL 배포판이라 apt 저장소가 죽어 위가 실패하면, GitHub를 거치지 않거나 검증을 끕니다(폐쇄망 한정):
+```bash
+git -c http.sslVerify=false clone <repo>      # 검증 끔(MITM 위험) — 받은 뒤 커밋 해시 확인
+scp -r server@<중앙IP>:~/KN-IG ~/             # 또는 중앙에서 통째로 복사(인증서까지)
+```

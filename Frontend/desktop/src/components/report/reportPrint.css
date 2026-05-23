@@ -1,0 +1,25 @@
+/* 보고서 PDF 인쇄 — .report-view만 인쇄, 콘솔 크롬 숨김. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .report-view,
+  .report-view * {
+    visibility: visible;
+  }
+  .report-view {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+    color: #000;
+  }
+  .report-divider {
+    border-color: #d1d5db !important;
+  }
+  @page {
+    size: A4;
+    margin: 16mm;
+  }
+}

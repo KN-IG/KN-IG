@@ -84,9 +84,14 @@ else
 fi
 
 mysql_service_name() {
-    local s
-    for s in mysql mysqld mariadb; do
-        systemctl list-unit-files 2>/dev/null | grep -q "^${s}\.service" && { echo "$s"; return 0; }
+    # 유닛 존재 확인 — list-unit-files 텍스트 파싱은 systemd 버전/출력 포맷에 취약해
+    # 디스크의 유닛 파일을 직접 확인하고(가장 견고), systemctl cat로 폴백한다.
+    local s d
+    for s in mysql mariadb mysqld; do
+        for d in /usr/lib/systemd/system /lib/systemd/system /etc/systemd/system /run/systemd/system; do
+            [[ -f "${d}/${s}.service" ]] && { echo "$s"; return 0; }
+        done
+        systemctl cat "${s}.service" >/dev/null 2>&1 && { echo "$s"; return 0; }
     done
     echo ""
 }
@@ -103,7 +108,14 @@ if [[ "$SKIP_DB" -eq 0 ]]; then
             *) die "지원하지 않는 디스트로에서 DB 자동설치 불가: ${IG_OS_PRETTY}" \
                    "MySQL 8 또는 MariaDB를 수동 설치 후 --skip-db로 재실행하세요." ;;
         esac
-        svc="$(mysql_service_name)"
+        # 설치 직후 유닛이 systemd에 인식되기까지 약간 지연될 수 있어 daemon-reload 후
+        # 짧게 재시도한다(첫 설치 타이밍 보강 — 엔진 변경 없음, MySQL 그대로).
+        $SUDO systemctl daemon-reload 2>/dev/null || true
+        for _ in 1 2 3 4 5; do
+            svc="$(mysql_service_name)"
+            [[ -n "$svc" ]] && break
+            sleep 1
+        done
         [[ -n "$svc" ]] || die "DB 서비스 유닛을 찾지 못함" "mysql/mariadb 설치 상태 확인"
         mark "DB 서비스 기동 실패 — systemctl status ${svc}"
         $SUDO systemctl enable --now "$svc"
@@ -302,10 +314,12 @@ fi
 step "8/8 검증"
 if [[ "$WITH_SERVICE" -eq 1 ]] && have systemctl; then
     if wait_tcp 127.0.0.1 "$HTTP_PORT" 30 1; then
-        if http_ok "http://127.0.0.1:${HTTP_PORT}/api/agents"; then
-            ok "HTTP API 정상: http://127.0.0.1:${HTTP_PORT}/api/agents"
+        # /api/* 는 PIN 인증(Bearer)이 걸려 토큰 없이는 401이 정상이다. 따라서 무인증
+        # liveness는 /auth/status(200, DB도 읽으므로 DB 연결까지 확인)로 점검한다.
+        if http_ok "http://127.0.0.1:${HTTP_PORT}/auth/status"; then
+            ok "HTTP API 정상: /auth/status 200 (인증 게이트 동작, /api/*는 토큰 필요)"
         else
-            die "HTTP 포트는 열렸으나 /api/agents 비정상" "journalctl -u ${SVC_NAME} -n 50 --no-pager"
+            die "HTTP 포트는 열렸으나 /auth/status 비정상" "journalctl -u ${SVC_NAME} -n 50 --no-pager"
         fi
     else
         die "HTTP ${HTTP_PORT} 미개방 — 백엔드 기동 실패 추정" "journalctl -u ${SVC_NAME} -n 50 --no-pager"

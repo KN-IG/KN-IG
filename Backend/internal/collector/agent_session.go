@@ -178,6 +178,7 @@ func (s *AgentSession) handleFileEvent(payload []byte) {
 		DetectedBy:     MonitorTypeName(ev.DetectedBy),
 		Pid:            int(ev.Pid),
 		Timestamp:      int64(ev.Timestamp),
+		Blocked:        ev.Blocked != 0,
 	}
 
 	// DB 저장
@@ -195,6 +196,7 @@ func (s *AgentSession) handleFileEvent(payload []byte) {
 		FilePermission: p.FilePermission,
 		DetectedBy:     p.DetectedBy,
 		Pid:            p.Pid,
+		Blocked:        p.Blocked,
 		OccurredAt:     time.Unix(p.Timestamp, 0),
 	}
 	s.pub.Publish(e)

@@ -273,9 +273,8 @@ setup_config() {
     # 프로젝트 내 설정 파일 복사 시도
     local src_conf=""
     for candidate in \
-        "$PROJECT_DIR/configs/test.conf" \
-        "$PROJECT_DIR/configs/agent.yaml" \
-        "$PROJECT_DIR/configs/ig.conf"
+        "$PROJECT_DIR/configs/ig.conf" \
+        "$PROJECT_DIR/configs/agent.yaml"
     do
         if [[ -f "$candidate" ]]; then
             src_conf="$candidate"

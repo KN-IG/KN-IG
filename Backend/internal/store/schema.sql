@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS file_events (
     file_permission VARCHAR(10)  NOT NULL DEFAULT '',
     detected_by     VARCHAR(20)  NOT NULL DEFAULT 'lkm',
     pid             INT          NOT NULL DEFAULT 0,
+    blocked         BOOLEAN      NOT NULL DEFAULT FALSE,
     occurred_at     DATETIME     NOT NULL,
     received_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE

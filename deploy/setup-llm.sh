@@ -65,21 +65,28 @@ if ! find_python; then
 fi
 ok "Python: $("$PY" --version 2>&1) (${PY})"
 
-# venv 모듈 가용성(데비안 계열은 python3-venv 별도 패키지)
-if ! "$PY" -c 'import venv' 2>/dev/null; then
-    log "venv 모듈 없음 — 설치 시도"
+# venv 생성 가능 여부 — 'import venv'(모듈)는 Ubuntu에 기본 존재하지만, 실제 생성에는
+# ensurepip이 필요하고 이는 데비안 계열에서 python3.X-venv 패키지로만 제공된다.
+# 따라서 ensurepip 기준으로 점검하고, 실행 중인 파이썬 버전에 맞는 패키지를 설치한다.
+if ! "$PY" -c 'import ensurepip' 2>/dev/null; then
+    log "venv 생성 모듈(ensurepip) 없음 — 설치 시도"
     ig_pkg_refresh
-    [[ "$IG_OS_FAMILY" == "debian" ]] && ig_pkg_install python3-venv || true
-    "$PY" -c 'import venv' 2>/dev/null || die "python venv 모듈 확보 실패" \
-        "Ubuntu: sudo apt install python3-venv / RHEL: python3 표준 포함"
+    if [[ "$IG_OS_FAMILY" == "debian" ]]; then
+        pyver="$("$PY" -c 'import sys;print(f"{sys.version_info[0]}.{sys.version_info[1]}")' 2>/dev/null || echo 3)"
+        ig_pkg_install "python${pyver}-venv" || ig_pkg_install python3-venv || true
+    fi
+    "$PY" -c 'import ensurepip' 2>/dev/null || die "venv 생성 모듈(ensurepip) 확보 실패" \
+        "Ubuntu: sudo apt install python${pyver:-3}-venv / RHEL: python3 표준 포함"
 fi
 
 step "2/5 venv + 의존성"
-if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
+# 재사용은 python·pip 둘 다 있을 때만. 첫 실패로 pip 미부트스트랩된 깨진 venv는 재생성한다.
+if [[ -x "${VENV_DIR}/bin/python" && -x "${VENV_DIR}/bin/pip" ]]; then
+    log "venv 존재 — 재사용"
+else
+    [[ -e "$VENV_DIR" ]] && { warn "기존 venv 불완전 — 재생성"; rm -rf "$VENV_DIR"; }
     log "venv 생성: ${VENV_DIR}"
     "$PY" -m venv "$VENV_DIR"
-else
-    log "venv 존재 — 재사용"
 fi
 PIP="${VENV_DIR}/bin/pip"
 mark "pip 업그레이드 실패 — 인터넷/프록시(pip.conf) 확인"

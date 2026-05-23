@@ -34,7 +34,6 @@
  * 시그널:
  *   SIGTERM/SIGINT  → 정상 종료
  *   SIGHUP          → 설정 재로드
- *   SIGUSR1         → 예약됨 (현재 런타임 watch 변경 미사용)
  */
 
 #include <stdarg.h> 
@@ -70,13 +69,11 @@ pthread_mutex_t  g_log_lock   = PTHREAD_MUTEX_INITIALIZER;
 
 static volatile sig_atomic_t g_running   = 1;
 static volatile sig_atomic_t g_reload    = 0;
-static volatile sig_atomic_t g_scan_req  = 0;  /* SIGUSR1 온디맨드 watch 변경 */
 
 /* 에이전트 로컬 베이스라인 DB — MODIFY 이벤트 시 자동 무결성 검사 */
 static ig_baseline_db_t g_baseline_db;
 
-/* 백엔드를 전역으로 — handle_scan_request(), reload_config()에서 접근 필요 */
-static ig_backend_t *g_be_inotify  = NULL;
+/* 백엔드를 전역으로 — reload_config()에서 접근 필요 */
 static int            g_ebpf_active = 0;
 static int            g_lkm_active  = 0;
 static uint32_t       g_ebpf_block  = IG_EBPF_BLOCK_DENY;
@@ -92,7 +89,6 @@ static char             g_agent_id[128] = {0};
 static int              g_transport_ok  = 0;
 
 /* ── 외부 함수 ─────────────────────────────────── */
-extern ig_backend_t *ig_inotify_create(void);
 extern int  ig_config_load(ig_config_t *cfg, const char *path);
 extern void ig_config_dump(ig_config_t *cfg);
 
@@ -125,7 +121,6 @@ static void signal_handler(int sig) {
     switch (sig) {
         case SIGTERM: case SIGINT: g_running  = 0; break;
         case SIGHUP:               g_reload   = 1; break;
-        case SIGUSR1:              g_scan_req = 1; break;
     }
 }
 
@@ -137,7 +132,6 @@ static void setup_signals(void) {
     sigaction(SIGTERM, &sa, NULL);
     sigaction(SIGINT,  &sa, NULL);
     sigaction(SIGHUP,  &sa, NULL);
-    sigaction(SIGUSR1, &sa, NULL);
     sa.sa_handler = SIG_IGN;
     sigaction(SIGPIPE, &sa, NULL);
 }
@@ -191,13 +185,6 @@ static void *lkm_event_thread(void *arg)
         ev.timestamp = (time_t)(lev.timestamp_ns / 1000000000LL);
         strncpy(ev.path, lev.path, sizeof(ev.path) - 1);
         strncpy(ev.comm, lev.comm, sizeof(ev.comm) - 1);
-
-        /* DEBUG: ABI/캡처 진단 — 검증 끝나면 제거 */
-        LOG_INFO_IG("[lkm-dbg] ev_sz=%zu chain_entry_sz=%zu chain_depth=%u trunc=%u",
-                     sizeof(struct ig_lkm_event),
-                     sizeof(struct ig_lkm_chain_entry),
-                     (unsigned)lev.chain_depth,
-                     (unsigned)lev.chain_truncated);
 
         /* PID ancestry chain — 커널이 race-free로 캡처해 준 chain 사용 */
         memset(&ev.chain, 0, sizeof(ev.chain));
@@ -348,48 +335,7 @@ static void reload_config(void) {
         LOG_INFO_IG("verbose config changed: %d", g_verbose);
     }
 
-    /* inotify watch 목록 diff 적용 */
-    if (g_be_inotify) {
-        /* 새 목록에 없는 기존 watch → 제거 */
-        for (int i = 0; i < g_cfg->watch_count; i++) {
-            int found = 0;
-            for (int j = 0; j < new_cfg->watch_count; j++) {
-                if (strcmp(g_cfg->watches[i].path,
-                           new_cfg->watches[j].path) == 0) {
-                    found = 1;
-                    break;
-                }
-            }
-            if (!found) {
-                LOG_INFO_IG("inotify watch removed: %s", g_cfg->watches[i].path);
-                g_be_inotify->remove_watch(g_be_inotify, g_cfg->watches[i].path);
-            }
-        }
-        /* 기존 목록에 없는 새 watch → 추가 */
-        for (int j = 0; j < new_cfg->watch_count; j++) {
-            int found = 0;
-            for (int i = 0; i < g_cfg->watch_count; i++) {
-                if (strcmp(new_cfg->watches[j].path,
-                           g_cfg->watches[i].path) == 0) {
-                    found = 1;
-                    break;
-                }
-            }
-            if (!found) {
-                LOG_INFO_IG("inotify watch added: %s (recursive=%d)",
-                             new_cfg->watches[j].path,
-                             new_cfg->watches[j].recursive);
-                g_be_inotify->add_watch(g_be_inotify,
-                                        new_cfg->watches[j].path,
-                                        new_cfg->watches[j].recursive);
-            }
-        }
-        g_cfg->watch_count = new_cfg->watch_count;
-        memcpy(g_cfg->watches, new_cfg->watches,
-               sizeof(ig_watch_entry_t) * (size_t)new_cfg->watch_count);
-    }
-
-    /* eBPF policy diff — inotify와 동일한 기준으로 policy_map 갱신 */
+    /* eBPF policy diff — policy_map 갱신 */
 #ifdef HAVE_LIBBPF
     if (g_ebpf_active) {
         uint32_t protect_mask = IG_EBPF_OP_WRITE | IG_EBPF_OP_DELETE | IG_EBPF_OP_ATTR;
@@ -435,47 +381,13 @@ static void reload_config(void) {
         LOG_INFO_IG("[lkm] 정책 재주입 완료 — %d개 inode", n);
     }
 
+    /* watch 목록 갱신 */
+    g_cfg->watch_count = new_cfg->watch_count;
+    memcpy(g_cfg->watches, new_cfg->watches,
+           sizeof(ig_watch_entry_t) * (size_t)new_cfg->watch_count);
+
     free(new_cfg);
     LOG_INFO_IG("configuration reload complete");
-}
-
-/* ── 온디맨드 watch 변경 (SIGUSR1) ─────────────── */
-#define IG_SCAN_REQUEST_FILE "/tmp/ig_scan_request"
-
-static void handle_scan_request(void) {
-    if (!g_be_inotify) {
-        LOG_WARN_IG("inotify backend does not exist — watch cannot be change");
-        return;
-    }
-    FILE *fp = fopen(IG_SCAN_REQUEST_FILE, "r");
-    if (!fp) {
-        LOG_WARN_IG("scan request fle does not exist: %s", IG_SCAN_REQUEST_FILE);
-        return;
-    }
-    char line[IG_MAX_PATH];
-    while (fgets(line, sizeof(line), fp)) {
-        size_t len = strlen(line);
-        while (len > 0 && (line[len-1] == '\n' || line[len-1] == ' '))
-            line[--len] = '\0';
-        if (len == 0) continue;
-
-        if (line[0] == '+') {
-            char *path = line + 1;
-            while (*path == ' ') path++;
-            LOG_INFO_IG("On-demand watch add: %s", path);
-            g_be_inotify->add_watch(g_be_inotify, path, 1);
-        } else if (line[0] == '-') {
-            char *path = line + 1;
-            while (*path == ' ') path++;
-            LOG_INFO_IG("On-demand watch remove: %s", path);
-            g_be_inotify->remove_watch(g_be_inotify, path);
-        } else {
-            LOG_INFO_IG("On-demand watch add: %s", line);
-            g_be_inotify->add_watch(g_be_inotify, line, 1);
-        }
-    }
-    fclose(fp);
-    unlink(IG_SCAN_REQUEST_FILE);
 }
 
 /* ── 보안 파일 오픈 ────────────────────────────── */
@@ -631,7 +543,6 @@ int main(int argc, char *argv[]) {
     const char *found_conf = find_system_file(flag_conf, "/etc/ig_monitor/ig.conf");
     if (!found_conf) found_conf = IG_CONFIG_PATH; /* 최후 fallback */
 
-    // char config_path[IG_MAX_PATH];
     strncpy(g_config_path, found_conf, sizeof(g_config_path) - 1);
 
     /* env 탐색: -e 플래그 > /etc/ig_monitor/ig.env */
@@ -856,6 +767,10 @@ int main(int argc, char *argv[]) {
 
     /* LKM: 베이스라인 inode 정책 주입 + 이벤트 스레드 */
     if (g_lkm_active) {
+        /* 모듈 정책 해시테이블은 에이전트 재시작과 무관하게 커널에 잔존한다.
+         * 먼저 비워야 옛 정책(예: 이전 실행의 /etc 전체)이 누적되지 않고
+         * 현재 ig.conf대로만 적용된다. (재적재 없이 정책 변경이 반영되게 함) */
+        lkm_clear_all();
         int n = lkm_add_from_baseline(&g_baseline_db,
                                       g_ebpf_block ? IG_BLOCK_DENY
                                                     : IG_BLOCK_AUDIT);
@@ -886,11 +801,9 @@ int main(int argc, char *argv[]) {
 #endif /* HAVE_LIBBPF */
 
     if (g_ebpf_active) {
-        LOG_INFO_IG("inotify fallback 비활성화 — eBPF 전용 모드 (kernel %d.%d)",
-                     kver_major, kver_minor);
+        LOG_INFO_IG("eBPF 전용 모드 활성 (kernel %d.%d)", kver_major, kver_minor);
     } else {
-        LOG_INFO_IG("inotify fallback 비활성화 — LKM 전용 모드 (kernel %d.%d)",
-                     kver_major, kver_minor);
+        LOG_INFO_IG("LKM 전용 모드 활성 (kernel %d.%d)", kver_major, kver_minor);
     }
 
     daemon_notify_ready();
@@ -901,7 +814,6 @@ int main(int argc, char *argv[]) {
     uint64_t last_dropped = 0;
 
     while (g_running) {
-        if (g_scan_req) { g_scan_req = 0; handle_scan_request(); }
         if (g_reload)   { g_reload   = 0; reload_config(); }
 
         ig_event_t ev;
@@ -936,8 +848,6 @@ int main(int argc, char *argv[]) {
     /* LKM: fd 닫으면 lkm_event_thread의 select()가 풀림 */
     if (g_lkm_active)  lkm_client_cleanup();
     if (lkm_thread)   { pthread_join(lkm_thread,   NULL); LOG_INFO_IG("LKM 스레드 합류"); }
-
-    if (g_be_inotify)  { g_be_inotify->cleanup(g_be_inotify); free(g_be_inotify); }
 
     if (transport_inited) {
         ig_tcp_disconnect(&g_tcp_client);

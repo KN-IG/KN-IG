@@ -33,6 +33,7 @@ type FileEventPayload struct {
 	DetectedBy     string // lkm, ebpf
 	Pid            int
 	Timestamp      int64
+	Blocked        bool // lock 모드에서 실제 차단됐는지(maintenance/감사 모드는 false)
 }
 
 // Agent 도메인
@@ -81,6 +82,7 @@ type FileEvent struct {
 	FilePermission string // "0644"
 	DetectedBy     string // lkm, ebpf
 	Pid            int    // PID를 제공하지 않는 이벤트는 0
+	Blocked        bool   // lock 모드 실제 차단 여부(maintenance/감사 모드 false)
 	OccurredAt     time.Time
 	ReceivedAt     time.Time
 }

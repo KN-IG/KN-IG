@@ -242,7 +242,13 @@ int ig_hooks_init(void)
     // Bypass pages containing security_hook_heads
     ig_disable_wp();
     for (i = 0; i < ARRAY_SIZE(ig_hooks); i++)
+        /* LSM 훅 리스트는 4.16에서 list_head→hlist로 전환됨.
+           <4.16(4.15 등)은 security_hook_list.list가 struct list_head라 list_*_rcu 사용. */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 16, 0)
         hlist_add_tail_rcu(&ig_hooks[i].list, ig_hooks[i].head);
+#else
+        list_add_tail_rcu(&ig_hooks[i].list, ig_hooks[i].head);
+#endif
     ig_enable_wp();
 
     pr_info("hooks installed (LSM injection 4.15+, %zu hooks)\n",
@@ -256,7 +262,11 @@ void ig_hooks_exit(void)
 
     ig_disable_wp();
     for (i = 0; i < ARRAY_SIZE(ig_hooks); i++)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 16, 0)
         hlist_del_rcu(&ig_hooks[i].list);
+#else
+        list_del_rcu(&ig_hooks[i].list);
+#endif
     ig_enable_wp();
 
     synchronize_rcu();

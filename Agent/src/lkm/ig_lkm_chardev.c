@@ -14,6 +14,8 @@
 #include <linux/fs.h>
 #include <linux/uaccess.h>
 #include <linux/poll.h>
+#include <linux/slab.h>
+#include <linux/sched.h>   /* schedule() — wait_event_interruptible 내부 호출(구형 커널에서 명시 필요) */
 
 #include "ig_lkm_common.h"
 #include "ig_lkm_policy.h"
@@ -57,23 +59,33 @@ static long ig_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 static ssize_t ig_read(struct file *f, char __user *buf,
                          size_t count, loff_t *pos)
 {
-    struct ig_lkm_event ev;
+    struct ig_lkm_event *ev;   /* ~7.5KB — 스택 대신 힙 (스택 오버플로 방지) */
     int ret;
+    ssize_t n;
 
-    if (count < sizeof(ev))
+    if (count < sizeof(*ev))
         return -EINVAL;
 
     ret = wait_event_interruptible(ig_wq, !ig_event_empty());
     if (ret)
         return ret;
 
-    if (!ig_event_pop(&ev))
-        return 0;
+    ev = kmalloc(sizeof(*ev), GFP_KERNEL);
+    if (!ev)
+        return -ENOMEM;
 
-    if (copy_to_user(buf, &ev, sizeof(ev)))
-        return -EFAULT;
-
-    return sizeof(ev);
+    if (!ig_event_pop(ev)) {
+        n = 0;
+        goto out;
+    }
+    if (copy_to_user(buf, ev, sizeof(*ev))) {
+        n = -EFAULT;
+        goto out;
+    }
+    n = sizeof(*ev);
+out:
+    kfree(ev);
+    return n;
 }
 
 static unsigned int ig_poll(struct file *f, poll_table *wait)
