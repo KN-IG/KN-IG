@@ -17,7 +17,7 @@ public/       구 Vanilla 앱 — 롤백 안전판으로 보존(현재 미사용
 
 | 작업 (`cd desktop`) | 명령 |
 |---|---|
-| 개발 실행 (Vite + Tauri) | `npm run dev` |
+| 개발 실행 (Vite + Tauri) | `npm run tauri dev` |
 | 설치파일 빌드 (Vite + Tauri) | `npm run build` |
 
 Tailwind는 Vite JIT 파이프라인이 처리합니다. 별도 watch 명령은 불필요합니다.
