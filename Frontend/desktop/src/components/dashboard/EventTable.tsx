@@ -158,7 +158,7 @@ export function EventTable({
                     <span className="flex items-center gap-2">
                       <span
                         className={cn(
-                          "shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold",
+                          "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium",
                           TYPE_CLS[String(e.type)] ?? TYPE_DEFAULT,
                         )}
                       >
