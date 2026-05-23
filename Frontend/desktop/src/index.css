@@ -132,6 +132,13 @@
     @apply bg-background text-foreground;
     font-family: var(--sans);
   }
+
+  /* 텍스트 선택(드래그) 색 — primary 채널 + 흰 글자. 단일출처 토큰 참조.
+     (미지정 시 WKWebView 기본 하이라이트에서 글자가 흰색으로 사라지는 문제 방지) */
+  ::selection {
+    background: hsl(var(--primary) / 0.85);
+    color: #fff;
+  }
 }
 
 @layer components {

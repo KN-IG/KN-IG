@@ -43,7 +43,7 @@ html { scroll-behavior:smooth; }
     radial-gradient(60vw 50vh at 12% -6%, rgba(10,132,255,.22), transparent 60%),
     radial-gradient(55vw 45vh at 92% 4%, rgba(140,90,255,.20), transparent 60%),
     radial-gradient(60vw 55vh at 78% 96%, rgba(0,210,190,.16), transparent 60%); }
-::selection { background:var(--blue); color:#fff; }
+.report-v2 ::selection { background:var(--blue); color:#fff; }
 .num { font-variant-numeric:tabular-nums; font-feature-settings:"tnum"; }
 #progress { position:absolute; top:0; left:0; height:2px; width:0%; background:var(--blue); z-index:90; transition:width .1s linear; }
 
