@@ -43,15 +43,15 @@ export const eventsProvider: EventsProvider = {
   },
 };
 
-// [BACKEND-CONTRACT — 잠정] /api/alerts 응답 형태는 콘솔 UI에 미노출이었으므로
-// 필드명을 추정 매핑합니다. P4 실연동 시 실제 응답으로 검증/조정 필요.
+// /api/alerts 응답은 Backend internal.Alert 구조체를 json 태그 없이 직렬화한 것이라
+// 키가 Go 필드명 그대로다(interfaces.go: ID/AgentID/Severity/Message/Resolved/CreatedAt).
 interface RawAlert {
   ID?: number | string;
   AgentID?: string;
   Severity?: string;
   Message?: string;
   Resolved?: boolean;
-  OccurredAt?: string;
+  CreatedAt?: string;
 }
 
 export const alertsProvider: AlertsProvider = {
@@ -67,7 +67,7 @@ export const alertsProvider: AlertsProvider = {
       severity: (r.Severity || "LOW").toUpperCase() as Alert["severity"],
       message: r.Message ?? "",
       resolved: Boolean(r.Resolved),
-      time: fmtTime(r.OccurredAt),
+      time: fmtTime(r.CreatedAt),
     }));
   },
   async resolve(id) {
@@ -77,6 +77,7 @@ export const alertsProvider: AlertsProvider = {
       return;
     }
     const numeric = id.replace(/^ALR-/, "");
-    await apiFetch(`/api/alerts/${numeric}/resolve`, { method: "POST" });
+    // Backend 라우트는 PATCH /api/alerts/:id/resolve (server.go).
+    await apiFetch(`/api/alerts/${numeric}/resolve`, { method: "PATCH" });
   },
 };

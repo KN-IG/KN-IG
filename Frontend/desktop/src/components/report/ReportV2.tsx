@@ -114,6 +114,9 @@ export function ReportV2() {
   const [range, setRange] = useState<RangeMode>("since");
   const [from, setFrom] = useState("2026-05-14");
   const [to, setTo] = useState("2026-05-21");
+  // 실서버 연동(useMock=false)에서 응답 실패 시 mock으로 폴백하되, 그 사실을 화면에 표시한다.
+  // (조용한 폴백은 "연결 확인" 단계에서 가짜 성공으로 보여 디버깅을 흐린다.)
+  const [liveError, setLiveError] = useState(false);
 
   // mock: 기간 선택에 맞춰 데이터를 동적 파생. 실서버: 기간 변경 시 재요청.
   const d = useMemo(
@@ -126,10 +129,18 @@ export function ReportV2() {
     let alive = true;
     loadReportSummary(range, from, to)
       .then((r) => {
-        if (alive && r) setBase(r);
+        if (!alive) return;
+        if (r) {
+          setBase(r);
+          setLiveError(false);
+        } else {
+          setLiveError(true); // 200이지만 형식 불일치(days 누락 등)
+        }
       })
-      .catch(() => {
-        /* 실패 시 mock 유지 */
+      .catch((e) => {
+        if (!alive) return;
+        console.error("리포트 서버 응답 실패 — 임시 데이터로 표시:", e);
+        setLiveError(true);
       });
     return () => {
       alive = false;
@@ -155,6 +166,11 @@ export function ReportV2() {
             <span className="chip"><span className="lab">대상 기간</span>2026.05.14 – 05.21</span>
             <span className="chip"><span className="lab">감시 호스트</span>{s.hosts}대</span>
             <span className="chip sev"><span className="dot" style={{ background: "var(--crit)" }} />종합 위험도 HIGH</span>
+            {!config.useMock && liveError && (
+              <span className="chip sev" title="리포트 서버 응답 실패로 임시 데이터를 표시 중입니다">
+                <span className="dot" style={{ background: "var(--high)" }} />임시 데이터(서버 미연결)
+              </span>
+            )}
           </div>
         </header>
 
