@@ -72,3 +72,17 @@ deploy/verify.sh                     검증
 
 로컬 검증: `bash -n` · Go linux/amd64 크로스빌드+`vet` · LLM `pytest`+uvicorn 실구동 · openssl mTLS 체인 ·
 **실 Backend 코드로 mTLS 핸드셰이크→REGISTER→FILE_EVENT 통합 테스트**. 실 4 VM의 네트워킹·MySQL 영속·커널 후킹은 `kn-ig --verify`가 책임.
+
+## 트러블슈팅
+
+**`git clone` → `server certificate verification failed`** (주로 구형/EOL Agent VM)
+GitHub 인증서 검증 실패. 원인은 시스템 시계 오차 또는 CA 번들 노후입니다.
+```bash
+date                                          # 시간이 틀리면: sudo timedatectl set-ntp true
+sudo apt-get install --reinstall -y ca-certificates && sudo update-ca-certificates
+```
+EOL 배포판이라 apt 저장소가 죽어 위가 실패하면, GitHub를 거치지 않거나 검증을 끕니다(폐쇄망 한정):
+```bash
+git -c http.sslVerify=false clone <repo>      # 검증 끔(MITM 위험) — 받은 뒤 커밋 해시 확인
+scp -r server@<중앙IP>:~/KN-IG ~/             # 또는 중앙에서 통째로 복사(인증서까지)
+```
