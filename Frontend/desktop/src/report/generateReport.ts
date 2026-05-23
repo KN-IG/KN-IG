@@ -1,4 +1,4 @@
-// 무결성 위반 보고서 생성(mock). 원본 이식: Frontend/public/js/api.js:450-518.
+// 무결성 위반 보고서 생성(mock).
 // 후속: POST /api/reports/generate로 교체(현재 클라이언트 mock LLM).
 import { classifyPath } from "./pathProfiles";
 import type { FileEvent } from "@/types/contracts";

@@ -2,10 +2,9 @@
 //
 //   상태머신: load → /auth/status → { setup | login | locked }
 //   - PIN 입력/확인, 에러/잠금/연결오류/재시도 패널.
-//   - 인증 성공 시 setMainSize() 호출 후 /app으로 이동(원본 auth.js:170-172 대체).
-//   - 진입 시 setLoginSize()로 로그인 창 크기 적용(원본 auth.js:213 대체).
+//   - 인증 성공 시 setMainSize() 호출 후 /app으로 이동.
+//   - 진입 시 setLoginSize()로 로그인 창 크기 적용.
 //
-// 원본 이식: Frontend/public/login.html + js/auth.js.
 // 변경점: Tailwind CDN 제거(Vite JIT), 시스템 카피는 회사용 "합니다"체.
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -59,7 +58,7 @@ export default function Login() {
     }
   }, [getStatus]);
 
-  // 진입: 로그인 창 크기 적용 + 상태 조회(원본 auth.js:213-214).
+  // 진입: 로그인 창 크기 적용 + 상태 조회.
   useEffect(() => {
     void setLoginSize();
     void loadStatus();

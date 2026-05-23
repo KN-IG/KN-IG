@@ -1,4 +1,4 @@
-// 상단 글로벌 navbar — 원본 .ig-topbar(Frontend/public/index.html:197-233) 톤 이식.
+// 상단 글로벌 navbar.
 //
 //   레이아웃: [브랜드] · [중앙 탭] · [우측 액션(연결상태 자리 + 테마 토글 + 로그아웃)]
 //   글래스 톤: .glass-topbar 유틸(색 채널 HSL 단일출처 + 알파/blur 합성).

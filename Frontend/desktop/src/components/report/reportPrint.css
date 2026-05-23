@@ -1,4 +1,4 @@
-/* 보고서 PDF 인쇄 — .report-view만 인쇄, 콘솔 크롬 숨김. 원본 index.html @media print 톤. */
+/* 보고서 PDF 인쇄 — .report-view만 인쇄, 콘솔 크롬 숨김. */
 @media print {
   body * {
     visibility: hidden;

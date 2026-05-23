@@ -1,4 +1,4 @@
-// 경로별 보안 프로파일 — 원본 데이터 이식: Frontend/public/js/api.js:79-417 (보존).
+// 경로별 보안 프로파일.
 // match 화살표 함수의 p는 PathProfile.match 타입에서 contextual typing으로 string 추론.
 export interface PathProfileMitre { id: string; title: string; desc: string; }
 export interface PathProfile {

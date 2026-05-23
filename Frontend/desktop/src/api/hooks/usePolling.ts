@@ -1,6 +1,6 @@
 // 공통 폴링 훅. 즉시 1회 실행 + intervalMs 주기 반복.
 // 타이머를 lifecycle 레지스트리에 등록 → 401/로그아웃 시 cancelAll로 함께 정지.
-// 언마운트 시에도 정리(고아 타이머 방지). 원본 app.js:36 setInterval 패턴 대체.
+// 언마운트 시에도 정리(고아 타이머 방지).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { registerInterval } from "../lifecycle";
 

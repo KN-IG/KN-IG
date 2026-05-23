@@ -5,7 +5,7 @@
 /*
   디자인 토큰 — HSL 단일출처 (P3 CRITICAL).
 
-  원본: Frontend/public/index.html:137-153 의 글래스 CSS 변수(hex/rgba).
+  글래스 CSS 변수(hex/rgba).
   여기서는 색상을 HSL 채널(`H S% L%`)로 *재정의*하여 shadcn/ui 변수가
   `hsl(var(--token))` 패턴으로 단일출처를 참조하게 한다.
 
@@ -144,7 +144,7 @@
 @layer components {
   /*
     글래스 표면 — 색 채널(HSL 단일출처) + 알파의 합성. rgba 하드코딩 없음.
-    원본 글래스 카드(index.html:171)·모달(:186) 톤을 재현.
+    글래스 카드·모달 톤을 재현.
 
     글래스 보더는 원본이 흰색 채널 고정(rgba(255,255,255,...))이라
     --card가 아닌 흰색(0 0% 100%) + --glass-border-alpha로 합성.
@@ -160,7 +160,7 @@
   }
 
   /*
-    상단 navbar — 원본 .ig-topbar(index.html:102) 톤.
+    상단 navbar 톤.
     배경은 --background 채널 + --topbar-alpha 합성(color-mix 대체).
   */
   .glass-topbar {

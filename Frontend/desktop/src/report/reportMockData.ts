@@ -1,5 +1,5 @@
-// 주간 종합 리포트 mock 데이터. 원본 이식: report-demo-v2.html DATA 객체.
-// /api/reports/summary 응답과 동일 형태. useMock/연동 실패 시 폴백(시퀀스 7).
+// 주간 종합 리포트 mock 데이터.
+// /api/reports/summary 응답과 동일 형태. useMock/연동 실패 시 폴백.
 
 export interface ReportSeverity {
   Critical: number;

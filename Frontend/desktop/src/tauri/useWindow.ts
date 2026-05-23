@@ -4,7 +4,6 @@
 // @tauri-apps/api ESM invoke로 호출(withGlobalTauri:false 전제).
 // 브라우저(non-Tauri) 환경은 invoke가 reject되므로 no-op으로 폴백한다.
 //
-// 원본 이식: Frontend/public/js/window-size.js.
 
 import { invoke } from "@tauri-apps/api/core";
 

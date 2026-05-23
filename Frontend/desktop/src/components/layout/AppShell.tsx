@@ -3,7 +3,7 @@
 //   ConnectionProvider로 감싸 Navbar 연결 dot과 페이지 폴링 상태(useDashboardData)를 공유한다.
 //   실제 페이지(Dashboard/Report/Logs/Policy)는 중첩 라우트로 채운다(App.tsx).
 //   로그아웃: AuthContext.logout()으로 토큰/폴링 정리 후 로그인 창 크기(360×460)로 축소
-//   (원본 index.html:226-230의 logout 핸들러 동작 보존).
+//   logout 핸들러 동작 보존.
 
 import { Outlet } from "react-router-dom";
 import { Navbar } from "./Navbar";

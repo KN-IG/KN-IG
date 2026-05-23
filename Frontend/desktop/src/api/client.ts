@@ -2,7 +2,6 @@
 //   - Bearer 토큰 자동 첨부(localStorage 'ig.session.token').
 //   - 401 응답 시: 활성 폴링/in-flight 요청 정지 → 토큰 삭제 → /login 리다이렉트.
 //
-// 원본 이식: Frontend/public/js/api.js:13-29.
 // 차이점: HashRouter 환경이므로 location.replace 대신 주입된 navigate 콜백을 호출한다
 // (페이지 전체 재로딩 방지). App에서 setUnauthorizedHandler로 핸들러를 등록한다.
 

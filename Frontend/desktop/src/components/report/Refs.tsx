@@ -1,4 +1,4 @@
-// 08 / REFERENCES — 관측 MITRE 기법 + 적용 표준 + 용어 정의 + 방법론. 원본 이식.
+// 08 / REFERENCES — 관측 MITRE 기법 + 적용 표준 + 용어 정의 + 방법론.
 import type { ReportSummary } from "@/report/reportMockData";
 
 export function Refs({ mitreGlossary }: { mitreGlossary: ReportSummary["mitreGlossary"] }) {

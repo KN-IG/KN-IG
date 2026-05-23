@@ -9,7 +9,6 @@
 //   setup/login 성공 시 토큰 저장 → authenticated 전이.
 //   logout 시 폴링 정지 + 토큰 삭제 → unauthenticated 전이.
 //
-// 원본 이식: Frontend/public/js/auth.js, index.html:9-12(토큰 가드).
 
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import type { ReactNode } from "react";

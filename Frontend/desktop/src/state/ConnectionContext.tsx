@@ -1,5 +1,5 @@
 // Central Server 연결 상태 공유. 폴링 훅(useDashboardData)이 성공/실패를 보고하고,
-// Navbar의 연결 dot이 이를 구독한다(원본 app.js:65-78 setConnectionStatus 대체).
+// Navbar의 연결 dot이 이를 구독한다.
 import { createContext, useContext, useState, type ReactNode } from "react";
 
 interface ConnectionState {

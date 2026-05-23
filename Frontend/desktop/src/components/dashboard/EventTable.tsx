@@ -1,5 +1,4 @@
 // 무결성 이벤트 테이블 — 에이전트/유형 필터 + 검색 + 페이지네이션.
-// 원본 app.js getFilteredEvents/renderEvents 이식.
 import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {

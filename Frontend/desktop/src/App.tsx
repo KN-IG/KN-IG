@@ -7,7 +7,7 @@
 //
 //   401 핸들러: client.ts의 setUnauthorizedHandler에 navigate를 주입(원본 location.replace 대체).
 //   창 크기 타이밍: /app 진입(authenticated) 시 setMainSize()로 콜드부트+기존토큰 시
-//   360×460 잔류 방지(원본 index.html:14 inline 호출 대체).
+//   360×460 잔류 방지.
 
 import { useEffect } from "react";
 import {

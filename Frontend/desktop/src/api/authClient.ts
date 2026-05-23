@@ -3,7 +3,6 @@
 //   POST /auth/setup   body { pin } → 201 { token }
 //   POST /auth/login   body { pin } → 200 { token }
 //
-// 원본 이식: Frontend/public/js/auth.js:13-65.
 // 인증 요청은 토큰이 없는 상태에서도 호출되므로 client.ts의 apiFetch(Bearer/401)와
 // 분리한다. Central Server URL은 빌드 시 박힌 config.backendUrl이 절대 출처.
 // config.useMock(dev)일 때는 백엔드 없이 통과시켜 UI를 테스트한다(아무 4~8자리 PIN 허용).
@@ -20,7 +19,7 @@ export interface AuthTokenResponse {
   token: string;
 }
 
-// 로그인/셋업 실패를 분류하기 위한 에러 코드(원본 auth.js:59-60).
+// 로그인/셋업 실패를 분류하기 위한 에러 코드.
 export type AuthErrorCode = "invalid_pin" | "locked";
 
 export class AuthError extends Error {

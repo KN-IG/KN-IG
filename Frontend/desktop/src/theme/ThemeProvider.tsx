@@ -3,7 +3,6 @@
 //   - localStorage 'theme'에 'dark' | 'light' 영속.
 //   - 저장값 없으면 OS 선호(prefers-color-scheme) 폴백.
 //
-// 원본 이식: Frontend/public/js/app.js:1-24.
 
 import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";

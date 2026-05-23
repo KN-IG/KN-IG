@@ -1,4 +1,4 @@
-// Backend(PascalCase) → UI(camelCase) 정규화. 원본 이식: Frontend/public/js/api.js:32-73.
+// Backend(PascalCase) → UI(camelCase) 정규화.
 import type { Agent, FileEvent, AgentStatus, EventType } from "@/types/contracts";
 
 function pad2(n: number): string {

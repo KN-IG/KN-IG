@@ -1,5 +1,5 @@
 // 대시보드 데이터 훅 — agents/events/alerts를 5초 폴링으로 동기화하고 KPI 집계.
-// 원본 app.js:53-63 refreshAndRender 대체. provider 경유(직접 fetch 금지).
+// provider 경유(직접 fetch 금지).
 // 폴링 성공/실패는 ConnectionContext로 보고 → Navbar 연결 dot에 반영.
 import { useCallback } from "react";
 import { usePolling, type PollingState } from "./usePolling";

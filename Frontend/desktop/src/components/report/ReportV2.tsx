@@ -1,10 +1,9 @@
-// 주간 종합 무결성 리포트 — report-demo-v2 디자인 완전 재현.
-// 원본: Frontend/public/report-demo-v2.html. CSS는 reportV2.css(.report-v2 스코프),
+// 주간 종합 무결성 리포트.
+// CSS는 reportV2.css(.report-v2 스코프),
 // 차트는 chart.js. topbar/progress는 콘솔 Navbar와 중복이라 생략(원본 embedded 모드와 동일).
 //
 // 섹션: HERO · RANGE · 01 KEY FINDINGS · 02 OVERVIEW(KPI) · 03 TREND · 04 SEVERITY&TARGETS
 //       · 05 WHERE&HOW(ATT&CK) · 06 INCIDENTS · 07 ACTIONS · 08 REFERENCES
-// (시퀀스 2~6에서 각 섹션을 점진 추가)
 import { useEffect, useMemo, useState } from "react";
 import "./reportV2.css";
 import { MOCK_REPORT, type ReportSummary } from "@/report/reportMockData";
