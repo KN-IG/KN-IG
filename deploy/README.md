@@ -23,6 +23,25 @@
 --agent <IP> --mode lock    # 즉시 차단 (기본 maintenance=감사)
 ```
 
+## LLM API 키 (선택 — `kn-ig --llm` 전에)
+
+키가 없어도 템플릿 서술로 리포트는 정상이며, 키를 넣으면 서술 품질만 올라갑니다.
+`kn-ig --llm`은 **기존 `LLM/.env`를 보존(덮어쓰지 않음)**, 없으면 `cluster.env` 키로 생성합니다.
+
+```bash
+# 방법 A — LLM/.env 미리 작성 (간단)
+cp LLM/.env.example LLM/.env
+# LLM/.env 편집: GEMINI_API_KEY=... (또는 OPENAI_API_KEY=...)
+
+# 방법 B — cluster.env에 넣기 (.env 없을 때만 반영)
+echo 'IG_GEMINI_API_KEY=...' >> cluster.env
+
+sudo ./kn-ig --llm
+curl -s localhost:8088/health   # "llm_provider_configured":true 면 키 인식
+```
+이미 `.env`가 생성됐다면 `LLM/.env` 직접 편집 후 `sudo systemctl restart kn-ig-llm`.
+키는 `LLM/.env`·`cluster.env`에만 — git 커밋 금지.
+
 ## 인증서 (물리 부트스트랩)
 
 Agent 인증서는 네트워크 배포 없이 **물리적으로 삽입**합니다(망분리 OT 보안).
