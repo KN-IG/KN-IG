@@ -8,6 +8,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
+#include <time.h>
 #include <unistd.h>
 
 /* st_dev(userspace OLD: major<<8) → 커널 dev_t(NEW: major<<20) 변환 */
@@ -471,11 +472,20 @@ static int handle_audit_event(void *ctx, void *data, size_t data_sz)
         memset(&ev, 0, sizeof(ev));
         ev.type      = op_to_ig_type(e->op_mask);
         ev.source    = IG_SOURCE_EBPF;
-        /* TODO: e->ts_ns는 bpf_ktime_get_ns()(CLOCK_MONOTONIC, 부팅 후 ns)라
-         * 그대로 unix epoch로 캐스팅하면 1970+부팅후초가 됨.
-         * 부팅시각 보정(CLOCK_REALTIME - CLOCK_MONOTONIC) 또는
-         * .bpf.c의 bpf_ktime_get_real_ns() 전환으로 수정 필요. */
-        ev.timestamp = (time_t)(e->ts_ns / 1000000000ULL);
+        /* e->ts_ns는 bpf_ktime_get_ns()=CLOCK_MONOTONIC(부팅 후 ns).
+         * 그대로 epoch로 캐스팅하면 1970+부팅후초가 되므로,
+         * (CLOCK_REALTIME - CLOCK_MONOTONIC) 오프셋으로 wall-clock 보정한다.
+         * 오프셋을 매 이벤트 산출 → NTP 시각 보정에도 따라감. */
+        {
+            struct timespec rt, mono;
+            int64_t off_ns = 0;
+            if (clock_gettime(CLOCK_REALTIME, &rt) == 0 &&
+                clock_gettime(CLOCK_MONOTONIC, &mono) == 0) {
+                off_ns = ((int64_t)rt.tv_sec  - (int64_t)mono.tv_sec)  * 1000000000LL
+                       + ((int64_t)rt.tv_nsec - (int64_t)mono.tv_nsec);
+            }
+            ev.timestamp = (time_t)(((int64_t)e->ts_ns + off_ns) / 1000000000LL);
+        }
         ev.pid       = (pid_t)e->pid;
         ev.uid       = (uid_t)e->uid;
         ev.dev       = e->dev;
