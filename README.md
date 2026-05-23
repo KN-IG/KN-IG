@@ -23,6 +23,7 @@ sudo ./kn-ig --agent <중앙IP>   # Agent (인증서 물리 삽입 후)
 ```
 
 배포·검증 상세: [deploy/README.md](deploy/README.md) · [docs/verification.md](docs/verification.md).
+문제 해결: [TROUBLESHOOTING.md](TROUBLESHOOTING.md) · 미해결 과제: [TODO.md](TODO.md).
 
 # Members
 Kang jiwoon  
