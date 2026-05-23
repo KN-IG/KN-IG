@@ -177,6 +177,8 @@ if [[ "$BACKEND" == "lkm" ]]; then
     moddir="/lib/modules/$(uname -r)/extra"
     $SUDO install -D -m 0644 "$KO" "${moddir}/ig_lkm.ko"
     $SUDO depmod -a 2>/dev/null || true
+    # 구형 배포판은 /etc/modules-load.d 가 없을 수 있음 — 먼저 생성(부팅 자동 로드용, systemd-modules-load)
+    $SUDO mkdir -p /etc/modules-load.d
     echo "ig_lkm" | $SUDO tee /etc/modules-load.d/ig_lkm.conf >/dev/null
     if lsmod 2>/dev/null | grep -q '^ig_lkm'; then
         ok "ig_lkm 이미 로드됨"
