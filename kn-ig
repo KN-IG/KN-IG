@@ -207,8 +207,9 @@ cmd_update() {
             local host mode
             host="$(read_env_val /etc/ig_monitor/ig.env IG_SERVER_HOST)"
             [[ -n "$host" ]] || die "ig.env에서 중앙서버 주소를 찾지 못함" "kn-ig --agent <중앙IP> 로 직접 재실행하세요"
-            # 현재 모드(lock/maintenance)를 유닛 정의에서 보존
+            # 현재 모드(lock/maintenance) 보존 — systemd 유닛 또는 init.d 스크립트에서 읽음
             mode="$(systemctl cat integrityguard.service 2>/dev/null | grep -oE -- '-m (lock|maintenance)' | awk '{print $2}' | tail -1)"
+            [[ -n "$mode" ]] || mode="$(grep -oE '^MODE=(lock|maintenance)' /etc/init.d/integrityguard 2>/dev/null | cut -d= -f2 | tail -1)"
             [[ -n "$mode" ]] || mode=maintenance
             log "중앙=${host}  mode=${mode}"
             bash "${DEPLOY}/setup-agent.sh" --backend "$host" --mode "$mode" || return 1 ;;
