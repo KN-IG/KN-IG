@@ -767,6 +767,10 @@ int main(int argc, char *argv[]) {
 
     /* LKM: 베이스라인 inode 정책 주입 + 이벤트 스레드 */
     if (g_lkm_active) {
+        /* 모듈 정책 해시테이블은 에이전트 재시작과 무관하게 커널에 잔존한다.
+         * 먼저 비워야 옛 정책(예: 이전 실행의 /etc 전체)이 누적되지 않고
+         * 현재 ig.conf대로만 적용된다. (재적재 없이 정책 변경이 반영되게 함) */
+        lkm_clear_all();
         int n = lkm_add_from_baseline(&g_baseline_db,
                                       g_ebpf_block ? IG_BLOCK_DENY
                                                     : IG_BLOCK_AUDIT);
