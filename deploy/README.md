@@ -9,7 +9,7 @@
 | Agent | `sudo ./kn-ig --agent <중앙IP>` | — | 중앙 `:9000` |
 
 - 검증: `kn-ig --verify` → **FAIL=0** 이면 콘솔↔중앙↔DB · 중앙↔LLM · Agent↔중앙 동작.
-- 운영(역할 자동 감지): `kn-ig`(상태) · `--status` · `--logs [-f]` · `--uninstall [--purge]`
+- 운영(역할 자동 감지): `kn-ig`(상태) · `--status` · `--logs [-f]` · `--update`(git pull+재배포) · `--uninstall [--purge]`
 - 검증 순서·실패 대응: **[../docs/verification.md](../docs/verification.md)**
 
 > `agent_id = hash(hostname+IP)` 라 Agent는 IP만 달라도 자동으로 다른 ID. 인증서는 공용.

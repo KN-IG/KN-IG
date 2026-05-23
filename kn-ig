@@ -11,6 +11,7 @@
 #        ./kn-ig --logs [-f]              이 VM 서비스 로그(-f 실시간)
 #        ./kn-ig --verify [--event-test]  동작 검증(PASS/FAIL; 이벤트 흐름까지)
 #   sudo ./kn-ig --uninstall [--purge]    이 VM에서 제거(--purge: 데이터/설정까지)
+#   sudo ./kn-ig --update                 git pull 후 현재 역할 재배포(자동 감지)
 #        ./kn-ig --console                관리자 콘솔(GUI) 안내
 #        ./kn-ig --version
 #
@@ -30,7 +31,7 @@ KN_IG_VERSION="1.0.0"
 # shellcheck source=deploy/lib/common.sh
 . "${DEPLOY}/lib/common.sh"
 
-usage() { sed -n '2,19p' "$SELF" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,20p' "$SELF" | sed 's/^# \{0,1\}//'; }
 box() { printf '\n%s━━ %s%s%s %s━━━━━━━━━━━━━━━━━━━%s\n' "$_C_BLU" "$_C_RST$_C_BLD" "$1" "$_C_RST" "$_C_BLU" "$_C_RST"; }
 ask() { local p="$1" d="${2:-}" v; read -r -p "$(printf '  %s [%s]: ' "$p" "$d")" v; printf '%s' "${v:-$d}"; }
 
@@ -154,6 +155,37 @@ cmd_version() {
     printf 'kn-ig %s%s\n' "$KN_IG_VERSION" "${commit:+ (${commit})}"
 }
 
+# 업데이트: git pull 후 이 VM의 역할을 자동 감지해 재배포(재빌드+재시작)
+cmd_update() {
+    box "KN-IG 업데이트 — git pull + 현재 역할 재배포"
+    { [[ -d "$REPO/.git" ]] && have git; } || die "git 저장소/명령 없음: $REPO" "수동으로 코드 갱신 후 역할 명령을 재실행하세요"
+
+    # repo 소유자 권한으로 pull(루트로 당기면 dubious ownership/소유권 오염). --ff-only로 충돌 시 자동 머지 방지.
+    local owner; owner="$(stat -c '%U' "$REPO" 2>/dev/null || echo root)"
+    log "git pull (${REPO}, as ${owner})..."
+    sudo -u "$owner" git -C "$REPO" pull --ff-only || die "git pull 실패 — 로컬 변경/충돌 가능" "git -C $REPO status 로 확인 후 재시도"
+
+    local role; role="$(detect_local_role)"
+    [[ -n "$role" ]] || die "설치된 역할이 없습니다" "먼저 --server/--llm/--agent 로 설치하세요"
+    ok "역할 감지: ${role} — 재배포 시작(멱등)"
+    ig_init_sudo
+    case "$role" in
+        central) bash "${DEPLOY}/setup-central.sh" || return 1 ;;
+        llm)     bash "${DEPLOY}/setup-llm.sh" || return 1 ;;
+        agent)
+            local host mode
+            host="$(read_env_val /etc/ig_monitor/ig.env IG_SERVER_HOST)"
+            [[ -n "$host" ]] || die "ig.env에서 중앙서버 주소를 찾지 못함" "kn-ig --agent <중앙IP> 로 직접 재실행하세요"
+            # 현재 모드(lock/maintenance)를 유닛 정의에서 보존
+            mode="$(systemctl cat integrityguard.service 2>/dev/null | grep -oE -- '-m (lock|maintenance)' | awk '{print $2}' | tail -1)"
+            [[ -n "$mode" ]] || mode=maintenance
+            log "중앙=${host}  mode=${mode}"
+            bash "${DEPLOY}/setup-agent.sh" --backend "$host" --mode "$mode" || return 1 ;;
+    esac
+    install_self
+    echo; ok "업데이트 완료 (${role}).  상태: kn-ig --status"
+}
+
 ROLE=""; AGENT_SERVER=""; AGENT_CERTS=""; AGENT_MODE=""; FOLLOW=0; PURGE=0; EVENT_TEST=0; EXTRA=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -165,6 +197,7 @@ while [[ $# -gt 0 ]]; do
         --status)  ROLE=status; shift ;;
         --logs)    ROLE=logs; shift ;;
         --uninstall) ROLE=uninstall; shift ;;
+        --update)  ROLE=update; shift ;;
         --console) ROLE=console; shift ;;
         --version) ROLE=version; shift ;;
         -f|--follow) FOLLOW=1; shift ;;
@@ -212,6 +245,7 @@ case "$ROLE" in
     logs)      cmd_logs ;;
     uninstall) cmd_uninstall ;;
     version)   cmd_version ;;
+    update)    cmd_update ;;
     console)
         box "관리자 콘솔 (GUI)"
         echo
