@@ -24,7 +24,7 @@ export interface FileEvent {
   agentId: string;
   event: string; // "{path} {type}"
   type: EventType | string;
-  action: string; // 현 agent는 "BLOCKED"만 emit
+  action: string; // "BLOCKED"(차단) | "DETECTED"(감지)
   path: string;
   pid?: number;
   detectedBy?: string;

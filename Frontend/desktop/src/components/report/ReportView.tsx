@@ -1,5 +1,6 @@
-// 보고서 전체 렌더 — 메타 헤더 + 10섹션(ReportBody) + PDF 인쇄. 원본 ui.js openReportModal 톤.
+// 보고서 전체 렌더 — 메타 헤더 + 10섹션(ReportBody) + PDF 인쇄.
 import { Button } from "@/components/ui/button";
+import { printReport } from "@/tauri/useWindow";
 import { ReportBody } from "./ReportBody";
 import type { Report } from "@/report/generateReport";
 import type { FileEvent } from "@/types/contracts";
@@ -30,7 +31,7 @@ export function ReportView({ report, event }: { report: Report; event: FileEvent
           <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${sevCls}`}>
             {report.severity}
           </span>
-          <Button variant="outline" size="sm" onClick={() => window.print()}>
+          <Button variant="outline" size="sm" onClick={() => void printReport()}>
             PDF 인쇄
           </Button>
         </div>
