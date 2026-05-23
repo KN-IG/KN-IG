@@ -185,7 +185,7 @@ done
 case "$ROLE" in
     server)
         ig_init_sudo
-        bash "${DEPLOY}/setup-central.sh" "${EXTRA[@]}" || exit 1
+        bash "${DEPLOY}/setup-central.sh" "${EXTRA[@]+"${EXTRA[@]}"}" || exit 1
         install_self
         echo; ok "중앙 서버 준비 완료."
         log "  Agent VM에서:  kn-ig --agent $(ig_primary_ip)   (ca/agent 인증서를 물리적으로 먼저 삽입)"
@@ -193,7 +193,7 @@ case "$ROLE" in
         ;;
     llm)
         ig_init_sudo
-        bash "${DEPLOY}/setup-llm.sh" "${EXTRA[@]}" || exit 1
+        bash "${DEPLOY}/setup-llm.sh" "${EXTRA[@]+"${EXTRA[@]}"}" || exit 1
         install_self
         echo; ok "LLM 서버 준비 완료.  상태: kn-ig --status"
         ;;
@@ -203,7 +203,7 @@ case "$ROLE" in
         args=(--backend "$AGENT_SERVER")
         [[ -n "$AGENT_CERTS" ]] && args+=(--certs-dir "$AGENT_CERTS")
         [[ -n "$AGENT_MODE" ]]  && args+=(--mode "$AGENT_MODE")
-        bash "${DEPLOY}/setup-agent.sh" "${args[@]}" "${EXTRA[@]}" || exit 1
+        bash "${DEPLOY}/setup-agent.sh" "${args[@]}" "${EXTRA[@]+"${EXTRA[@]}"}" || exit 1
         install_self
         echo; ok "Agent 준비 완료 (중앙=${AGENT_SERVER}).  상태: kn-ig --status"
         ;;
