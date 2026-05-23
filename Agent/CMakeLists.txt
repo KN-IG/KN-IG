@@ -1,9 +1,15 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 2.8.12)
 project(agent C)
 
 # ── 언어 표준 ───────────────────────────────────
-set(CMAKE_C_STANDARD          11)
-set(CMAKE_C_STANDARD_REQUIRED ON)
+# CMAKE_C_STANDARD는 cmake 3.1+ 전용. 구형(Ubuntu 14.04/CentOS7 = cmake 2.8)은 -std 플래그로 보강.
+# (CMAKE_C_FLAGS는 add_subdirectory 이전에 설정해 하위 모듈 src/core에도 전파됨)
+if(CMAKE_VERSION VERSION_LESS "3.1")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11")
+else()
+    set(CMAKE_C_STANDARD          11)
+    set(CMAKE_C_STANDARD_REQUIRED ON)
+endif()
 
 # ── 컴파일 옵션 ────────────────────────────────
 add_compile_options(-Wall -Wextra -O2)
