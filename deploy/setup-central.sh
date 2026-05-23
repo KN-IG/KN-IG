@@ -103,7 +103,14 @@ if [[ "$SKIP_DB" -eq 0 ]]; then
             *) die "지원하지 않는 디스트로에서 DB 자동설치 불가: ${IG_OS_PRETTY}" \
                    "MySQL 8 또는 MariaDB를 수동 설치 후 --skip-db로 재실행하세요." ;;
         esac
-        svc="$(mysql_service_name)"
+        # 설치 직후 유닛이 systemd에 인식되기까지 약간 지연될 수 있어 daemon-reload 후
+        # 짧게 재시도한다(첫 설치 타이밍 보강 — 엔진 변경 없음, MySQL 그대로).
+        $SUDO systemctl daemon-reload 2>/dev/null || true
+        for _ in 1 2 3 4 5; do
+            svc="$(mysql_service_name)"
+            [[ -n "$svc" ]] && break
+            sleep 1
+        done
         [[ -n "$svc" ]] || die "DB 서비스 유닛을 찾지 못함" "mysql/mariadb 설치 상태 확인"
         mark "DB 서비스 기동 실패 — systemctl status ${svc}"
         $SUDO systemctl enable --now "$svc"
