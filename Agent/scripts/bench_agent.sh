@@ -11,7 +11,7 @@
 #
 # 옵션:
 #   --agent <path>    agent 바이너리      (기본: ../build/agent)
-#   --conf  <path>    설정 파일           (기본: ../configs/test.conf)
+#   --conf  <path>    설정 파일           (기본: ../configs/ig.conf)
 #   --lkm   <path>    ig_lkm.ko 경로    (필수)
 #   --files <n>       파일 수             (기본: 1000)
 #   --out   <path>    결과 파일           (기본: ./bench_result_<ts>.txt)
@@ -26,7 +26,7 @@ set -euo pipefail
 # ── 기본값 ────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 AGENT_BIN="$SCRIPT_DIR/../build/agent"
-CONF_FILE="$SCRIPT_DIR/../configs/test.conf"
+CONF_FILE="$SCRIPT_DIR/../configs/ig.conf"
 LKM_KO=""
 FILE_COUNT=1000
 WATCH_DIR="/tmp/ig_bench_$$"
@@ -202,9 +202,14 @@ sudo insmod "$LKM_KO"
 LKM_SIZE=$(cat /proc/modules | grep "^ig_lkm " | awk '{print $2}')
 log "  ig_lkm 모듈 크기: ${LKM_SIZE} bytes"
 
-# test.conf 의 watch 경로를 WATCH_DIR 로 교체
+# ig.conf 의 [watch] 대상을 벤치 디렉토리(WATCH_DIR)로 교체한 임시 설정 생성
 TMP_CONF="/tmp/ig_bench_$$.conf"
-sed "s|/tmp/ig_test/|$WATCH_DIR/|g" "$CONF_FILE" > "$TMP_CONF"
+awk -v dir="$WATCH_DIR" '
+  /^\[watch\]/    { print; print dir " = recursive"; in_watch=1; next }
+  /^\[/           { in_watch=0 }
+  in_watch && /=/ { next }   # 기존 watch 항목 제거
+  { print }
+' "$CONF_FILE" > "$TMP_CONF"
 
 log "▶ agent 시작: $AGENT_BIN"
 "$AGENT_BIN" -c "$TMP_CONF" &

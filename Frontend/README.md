@@ -1,14 +1,14 @@
 # Frontend
 
-KN-IG 콘솔(브라우저 + Tauri 데스크톱)의 UI 레이어. 데이터 흐름은 [`architecture.png`](architecture.png) 참고.
+KN-IG 관리자 콘솔(Tauri 2 데스크톱)의 UI 레이어. 데이터 흐름은 [`architecture.png`](../docs/architecture.png) 참고.
 
 ## 구성
 
 ```
-public/       이식 원본·롤백 안전판(P7 최종 정리까지 보존)
-desktop/      Tauri 2 데스크톱 셸 + Vite React SPA
+desktop/      Tauri 2 데스크톱 셸 + Vite React SPA (현재 콘솔)
   src/        React+TS 소스 (Vite JIT Tailwind 포함)
   src-tauri/  Rust/Tauri 설정·명령
+public/       구 Vanilla 앱 — 롤백 안전판으로 보존(현재 미사용)
 ```
 
 ## 빌드
@@ -25,14 +25,16 @@ Tailwind는 Vite JIT 파이프라인이 처리합니다. 별도 watch 명령은 
 산출물 `desktop/src-tauri/target/release/bundle/`: Mac=`dmg/*.dmg`, Windows=`nsis/*-setup.exe`+`msi/*.msi`.
 크로스 빌드 불가(각 OS에서 빌드). 자세한 빌드·배포는 [desktop/README.md](desktop/README.md).
 
-## 설정 — `public/config.js`
+## 설정 — `desktop/.env`
 
-사이트별 단일 출처(UI 수정 불가, 빌드 직전 편집):
+중앙 서버 주소는 빌드 시 박힙니다(단일 출처 `src/config.ts` → `VITE_BACKEND_URL`).
+사이트가 다르면 `.env`를 바꿔 다시 빌드:
 
-```js
-window.IG_CONFIG = { backendUrl: "http://192.168.64.10:8080" };  // Central Server URL
 ```
-빈 값/도달 실패 → `Connection error` + Retry. 고객별은 `customer/<name>` 브랜치에서 수정 후 빌드.
+VITE_BACKEND_URL=http://192.168.64.10:8080   # Central Server URL
+```
+빈 값/도달 실패 → 연결 오류 화면. dev에서 백엔드 없이 UI만 보려면 `.env.development`의
+`VITE_USE_MOCK=true`(release 빌드엔 미적용). 연결 절차는 [desktop/README.md](desktop/README.md).
 
 ## 인증 & 데이터 흐름
 

@@ -27,12 +27,16 @@ agent/
 │   ├── setup_lkm_env.sh        # LKM 의존성 설치 (kernel 3.10+, CentOS 7 포함)
 │   └── setup_ebpf_deps.sh      # eBPF 의존성 설치 + LSM GRUB 설정 (kernel 5.8+)
 └── configs/
-    └── test.conf               # 샘플 설정 파일
+    ├── ig.conf                 # 감시/차단 설정 ([watch]/[protect])
+    └── ig.env                  # 전송 설정 (중앙 주소 · 인증서 경로)
 ```
 
 ---
 
 ## 빠른 시작
+
+> **권장**: 설치·서비스 등록·인증서 배치는 루트 `kn-ig --agent <중앙IP>` 한 줄로 끝납니다
+> ([deploy/README.md](../deploy/README.md)). 아래는 수동 빌드·디버깅용입니다.
 
 ### LKM 모드 (CentOS 7, kernel 3.10)
 
@@ -50,7 +54,7 @@ mkdir build && cd build && cmake .. && make -j$(nproc)
 sudo insmod src/lkm/ig_lkm.ko
 
 # 5. 에이전트 실행
-sudo ./build/agent -f -v -c configs/test.conf -m lock
+sudo ./build/agent -f -v -c configs/ig.conf -m lock
 ```
 
 ### eBPF 모드 (kernel 5.8+)
@@ -73,7 +77,7 @@ chmod +x cmake.sh
 sudo sh cmake.sh --prefix=/usr/local --skip-license 
 
 # 4. 에이전트 실행
-sudo ./build/agent -f -v -c configs/test.conf -m lock
+sudo ./build/agent -f -v -c configs/ig.conf -m lock
 ```
 
 ---
@@ -112,24 +116,30 @@ sudo ./build/agent -f -v -c configs/test.conf -m lock
 
 ## 설정 파일
 
-`/etc/ig_monitor/ig.conf` (또는 `-c` 플래그로 지정 단, 소유자 root 필수)
+**`ig.conf`** — 감시/차단 (`/etc/ig_monitor/ig.conf`, `-c`로 지정 가능, 소유자 root):
 
 ```ini
-[general]
-daemonize = false
+daemonize = 1
 log_file  = /var/log/ig_monitor.log
-verbose   = true
+ebpf      = 1                 # eBPF who-data 추적 (kernel 5.8+)
 
-[ebpf]
-enabled = true
+[watch]                       # 감시 경로
+/etc      = recursive
+/usr/bin  = single
 
-[watch]
-path      = /etc/important
-recursive = true
+[protect]                     # 변경/삭제 차단 대상
+/usr/local/bin/agent     = file
+/etc/ig_monitor/ig.conf  = file
+```
 
-[watch]
-path      = /opt/app/config
-recursive = false
+**`ig.env`** — 중앙 전송 (서비스가 환경변수로 로드):
+
+```env
+IG_SERVER_HOST=<중앙IP>
+IG_SERVER_PORT=9000
+IG_CA_CRT=/etc/ig_monitor/certs/ca.crt
+IG_AGENT_CRT=/etc/ig_monitor/certs/agent.crt
+IG_AGENT_KEY=/etc/ig_monitor/certs/agent.key
 ```
 
 ---

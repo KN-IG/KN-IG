@@ -1,7 +1,7 @@
 # KN-IG LLM Server
 
 기간 종합 보안 리포트 생성 서버. 중앙 Backend가 누적 `file_events`/`alerts`/`agents`를 보내면,
-`Frontend/public/report-demo-v2.html`이 렌더하는 `DATA`(JSON)를 반환합니다.
+콘솔 Report 탭(`ReportV2`)이 렌더하는 `DATA`(JSON)를 반환합니다.
 
 **원칙 — 숫자는 코드, 서술은 LLM**: 모든 수치는 `aggregate.py`에서 결정적 계산(환각 방지), 서술만 LLM(Gemini→GPT 폴백).
 키가 없거나 실패해도 템플릿 서술로 **항상 유효한 리포트**를 반환합니다(오프라인/망분리 안전).
