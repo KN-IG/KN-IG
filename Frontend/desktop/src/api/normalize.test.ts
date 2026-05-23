@@ -26,7 +26,7 @@ describe("normalizeEvent", () => {
     expect(e.type).toBe("MODIFIED");
     expect(e.agent).toBe("web-prod-01");
     expect(e.event).toBe("/etc/passwd MODIFIED");
-    expect(e.action).toBe("AUDITED"); // Blocked 없음(maintenance/감사) → AUDITED
+    expect(e.action).toBe("DETECTED"); // Blocked 없음(maintenance/감사) → DETECTED
     expect(e.path).toBe("/etc/passwd");
   });
 

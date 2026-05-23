@@ -19,10 +19,28 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import type { Agent, FileEvent } from "@/types/contracts";
 
 const PER_PAGE = 10;
 const ALL = "__all__"; // Radix Select는 빈 문자열 value 불가.
+
+// 이벤트 유형별 색상(생성=녹/수정=황/삭제=적/속성=청/이동=보라).
+const TYPE_CLS: Record<string, string> = {
+  CREATED: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+  MODIFIED: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+  DELETED: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400",
+  ATTRIB: "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300",
+  MOVED: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
+};
+const TYPE_DEFAULT = "bg-muted text-muted-foreground";
+
+// 조치별 색상: 차단(BLOCKED)=적색, 탐지(DETECTED)=중립.
+const ACTION_CLS: Record<string, string> = {
+  BLOCKED: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400",
+  DETECTED: "bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-300",
+};
+const ACTION_DEFAULT = "bg-muted text-muted-foreground";
 
 export function EventTable({
   events,
@@ -136,9 +154,26 @@ export function EventTable({
                 <TableRow key={e.id}>
                   <TableCell className="tabular-nums text-muted-foreground">{e.time}</TableCell>
                   <TableCell>{e.agent}</TableCell>
-                  <TableCell className="max-w-xs truncate">{e.event}</TableCell>
+                  <TableCell className="max-w-xs">
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          "shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold",
+                          TYPE_CLS[String(e.type)] ?? TYPE_DEFAULT,
+                        )}
+                      >
+                        {String(e.type)}
+                      </span>
+                      <span className="truncate text-foreground/80">{e.path}</span>
+                    </span>
+                  </TableCell>
                   <TableCell>
-                    <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-xs font-medium",
+                        ACTION_CLS[e.action] ?? ACTION_DEFAULT,
+                      )}
+                    >
                       {e.action}
                     </span>
                   </TableCell>

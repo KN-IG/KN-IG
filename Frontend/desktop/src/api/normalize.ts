@@ -60,7 +60,7 @@ export function normalizeEvent(e: RawEvent, agentMap: Record<string, Agent>): Fi
     agentId: e.AgentID,
     event: `${e.FilePath} ${type}`,
     type,
-    action: e.Blocked ? "BLOCKED" : "AUDITED", // lock=차단, maintenance/감사=감사
+    action: e.Blocked ? "BLOCKED" : "DETECTED", // lock=차단, maintenance/감사=탐지
     path: e.FilePath,
     pid: e.Pid,
     detectedBy: e.DetectedBy,

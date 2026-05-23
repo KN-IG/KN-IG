@@ -116,7 +116,7 @@ export function ReportV2() {
   const [to, setTo] = useState("2026-05-21");
   // 실서버 연동(useMock=false)에서 응답 실패 시 mock으로 폴백하되, 그 사실을 화면에 표시한다.
   // (조용한 폴백은 "연결 확인" 단계에서 가짜 성공으로 보여 디버깅을 흐린다.)
-  const [liveError, setLiveError] = useState(false);
+  const [liveError, setLiveError] = useState<string | null>(null);
 
   // mock: 기간 선택에 맞춰 데이터를 동적 파생. 실서버: 기간 변경 시 재요청.
   const d = useMemo(
@@ -132,15 +132,16 @@ export function ReportV2() {
         if (!alive) return;
         if (r) {
           setBase(r);
-          setLiveError(false);
+          setLiveError(null);
         } else {
-          setLiveError(true); // 200이지만 형식 불일치(days 누락 등)
+          setLiveError("응답 형식 불일치(days 없음)"); // 200이나 ReportSummary 아님
         }
       })
       .catch((e) => {
         if (!alive) return;
+        const msg = e instanceof Error ? e.message : "요청 실패";
         console.error("리포트 서버 응답 실패 — 임시 데이터로 표시:", e);
-        setLiveError(true);
+        setLiveError(msg); // 예: "503 Service Unavailable"(LLM 미가동)
       });
     return () => {
       alive = false;
@@ -167,8 +168,8 @@ export function ReportV2() {
             <span className="chip"><span className="lab">감시 호스트</span>{s.hosts}대</span>
             <span className="chip sev"><span className="dot" style={{ background: "var(--crit)" }} />종합 위험도 HIGH</span>
             {!config.useMock && liveError && (
-              <span className="chip sev" title="리포트 서버 응답 실패로 임시 데이터를 표시 중입니다">
-                <span className="dot" style={{ background: "var(--high)" }} />임시 데이터(서버 미연결)
+              <span className="chip sev" title={`리포트 서버 응답 실패: ${liveError} — LLM(:8088)/백엔드 확인`}>
+                <span className="dot" style={{ background: "var(--high)" }} />임시 데이터 · {liveError}
               </span>
             )}
           </div>
