@@ -493,8 +493,12 @@ static void ig_pc_preload(void)
     pr_info("proc_cache: preload %d existing processes\n", n);
 }
 
-/* ── tracepoint 포인터 lookup (RHEL/CentOS 등 미export 환경 우회) ── */
-
+/* ── tracepoint 등록 API ──
+ * 3.15+ : tracepoint_probe_register가 struct tracepoint* 를 받는다. 그 포인터는
+ *         __tracepoint_sched_process_* 심볼을 kallsyms로 찾아 얻는다(미export 우회).
+ * <3.15 : tracepoint_probe_register가 이름(const char*)을 받는다 → 포인터 lookup 불필요.
+ */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0)
 typedef unsigned long (*kallsyms_lookup_name_t)(const char *name);
 static kallsyms_lookup_name_t pc_kallsyms_fn;
 
@@ -515,6 +519,8 @@ static int pc_resolve_kallsyms(void)
 static struct tracepoint *tp_fork;
 static struct tracepoint *tp_exec;
 static struct tracepoint *tp_exit;
+#endif /* >= 3.15 */
+
 static int g_fork_reg, g_exec_reg, g_exit_reg;
 
 /* ── init/exit ────────────────────────────────────── */
@@ -526,6 +532,7 @@ int ig_proc_cache_init(void)
     INIT_LIST_HEAD(&ig_pc_lru);
     ig_pc_window_jiffies = jiffies;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0)
     ret = pc_resolve_kallsyms();
     if (ret) {
         pr_err("proc_cache: kallsyms_lookup_name resolve failed: %d\n", ret);
@@ -552,6 +559,20 @@ int ig_proc_cache_init(void)
     ret = tracepoint_probe_register(tp_exit, (void *)ig_pc_on_exit, NULL);
     if (ret) { pr_err("register exit tp failed: %d\n", ret); goto err3; }
     g_exit_reg = 1;
+#else
+    /* <3.15: 이름 기반 등록 — struct tracepoint* / kallsyms 불필요 */
+    ret = tracepoint_probe_register("sched_process_fork", (void *)ig_pc_on_fork, NULL);
+    if (ret) { pr_err("register fork tp failed: %d\n", ret); goto err1; }
+    g_fork_reg = 1;
+
+    ret = tracepoint_probe_register("sched_process_exec", (void *)ig_pc_on_exec, NULL);
+    if (ret) { pr_err("register exec tp failed: %d\n", ret); goto err2; }
+    g_exec_reg = 1;
+
+    ret = tracepoint_probe_register("sched_process_exit", (void *)ig_pc_on_exit, NULL);
+    if (ret) { pr_err("register exit tp failed: %d\n", ret); goto err3; }
+    g_exit_reg = 1;
+#endif
 
     /* tracepoint 등록 후 prepopulate — 그 사이 fork도 hash 중복 가드로 안전 */
     ig_pc_preload();
@@ -561,9 +582,15 @@ int ig_proc_cache_init(void)
             IG_PC_MAX_ENTRIES);
     return 0;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0)
 err3: tracepoint_probe_unregister(tp_exec, (void *)ig_pc_on_exec, NULL); g_exec_reg = 0;
 err2: tracepoint_probe_unregister(tp_fork, (void *)ig_pc_on_fork, NULL); g_fork_reg = 0;
 err1: return ret;
+#else
+err3: tracepoint_probe_unregister("sched_process_exec", (void *)ig_pc_on_exec, NULL); g_exec_reg = 0;
+err2: tracepoint_probe_unregister("sched_process_fork", (void *)ig_pc_on_fork, NULL); g_fork_reg = 0;
+err1: return ret;
+#endif
 }
 
 void ig_proc_cache_exit(void)
@@ -573,9 +600,15 @@ void ig_proc_cache_exit(void)
     int bkt;
     unsigned long flags;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0)
     if (g_exit_reg && tp_exit) tracepoint_probe_unregister(tp_exit, (void *)ig_pc_on_exit, NULL);
     if (g_exec_reg && tp_exec) tracepoint_probe_unregister(tp_exec, (void *)ig_pc_on_exec, NULL);
     if (g_fork_reg && tp_fork) tracepoint_probe_unregister(tp_fork, (void *)ig_pc_on_fork, NULL);
+#else
+    if (g_exit_reg) tracepoint_probe_unregister("sched_process_exit", (void *)ig_pc_on_exit, NULL);
+    if (g_exec_reg) tracepoint_probe_unregister("sched_process_exec", (void *)ig_pc_on_exec, NULL);
+    if (g_fork_reg) tracepoint_probe_unregister("sched_process_fork", (void *)ig_pc_on_fork, NULL);
+#endif
 
     /* tracepoint synchronize: 등록 해제 후 in-flight 콜백 완료 대기 */
     tracepoint_synchronize_unregister();
