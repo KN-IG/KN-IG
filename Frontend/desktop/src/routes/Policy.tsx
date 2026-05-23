@@ -269,7 +269,7 @@ export default function Policy() {
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  무결성 변경을 감지할 디렉토리·파일입니다. (inotify/fanotify)
+                  무결성 변경을 감지할 디렉토리·파일입니다. (LKM/eBPF)
                 </p>
                 {draft.watch.length === 0 ? (
                   <EmptyRow text="감시 경로가 없습니다. ‘경로 추가’로 등록하세요." />
