@@ -14,6 +14,7 @@
 #include <linux/fs.h>
 #include <linux/uaccess.h>
 #include <linux/poll.h>
+#include <linux/sched.h>   /* schedule() — wait_event_interruptible 내부 호출(구형 커널에서 명시 필요) */
 
 #include "ig_lkm_common.h"
 #include "ig_lkm_policy.h"
