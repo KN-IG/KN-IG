@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# kn-ig — KN-IG 통합 설치/운영 CLI. 각 VM 터미널에서 역할 한 줄이면 완벽 세팅됩니다.
+# kn-ig — KN-IG 통합 설치/운영 CLI.
 #
 # 설치:
 #   sudo ./kn-ig --server                 중앙 서버(Backend+MySQL)
@@ -17,7 +17,7 @@
 #
 # 옵션: --ip <IP>(server cert SAN) · --llm-host <HOST>(server) · --certs <DIR>(agent)
 #       --mode lock|maintenance(agent) · --no-service
-# 사전 준비는 저장소 클론뿐: git clone <repo> && cd KN-IG. 첫 실행 후 어디서나 `kn-ig`.
+# 준비: git clone <repo> && cd KN-IG  (첫 실행 후 어디서나 `kn-ig`).
 
 set -uo pipefail
 
@@ -263,7 +263,7 @@ case "$ROLE" in
         echo; ok "LLM 서버 준비 완료.  상태: kn-ig --status"
         ;;
     agent)
-        [[ -n "$AGENT_SERVER" ]] || die "중앙 서버 주소가 필요합니다" "예: sudo ./kn-ig --agent 192.168.64.10"
+        [[ -n "$AGENT_SERVER" ]] || die "중앙 서버 주소 필요" "e.g. sudo ./kn-ig --agent 192.168.64.10"
         ig_init_sudo
         args=(--backend "$AGENT_SERVER")
         [[ -n "$AGENT_CERTS" ]] && args+=(--certs-dir "$AGENT_CERTS")
