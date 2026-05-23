@@ -84,9 +84,14 @@ else
 fi
 
 mysql_service_name() {
-    local s
-    for s in mysql mysqld mariadb; do
-        systemctl list-unit-files 2>/dev/null | grep -q "^${s}\.service" && { echo "$s"; return 0; }
+    # 유닛 존재 확인 — list-unit-files 텍스트 파싱은 systemd 버전/출력 포맷에 취약해
+    # 디스크의 유닛 파일을 직접 확인하고(가장 견고), systemctl cat로 폴백한다.
+    local s d
+    for s in mysql mariadb mysqld; do
+        for d in /usr/lib/systemd/system /lib/systemd/system /etc/systemd/system /run/systemd/system; do
+            [[ -f "${d}/${s}.service" ]] && { echo "$s"; return 0; }
+        done
+        systemctl cat "${s}.service" >/dev/null 2>&1 && { echo "$s"; return 0; }
     done
     echo ""
 }
