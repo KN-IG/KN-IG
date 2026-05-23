@@ -80,11 +80,13 @@ if ! "$PY" -c 'import ensurepip' 2>/dev/null; then
 fi
 
 step "2/5 venv + 의존성"
-if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
+# 재사용은 python·pip 둘 다 있을 때만. 첫 실패로 pip 미부트스트랩된 깨진 venv는 재생성한다.
+if [[ -x "${VENV_DIR}/bin/python" && -x "${VENV_DIR}/bin/pip" ]]; then
+    log "venv 존재 — 재사용"
+else
+    [[ -e "$VENV_DIR" ]] && { warn "기존 venv 불완전 — 재생성"; rm -rf "$VENV_DIR"; }
     log "venv 생성: ${VENV_DIR}"
     "$PY" -m venv "$VENV_DIR"
-else
-    log "venv 존재 — 재사용"
 fi
 PIP="${VENV_DIR}/bin/pip"
 mark "pip 업그레이드 실패 — 인터넷/프록시(pip.conf) 확인"
