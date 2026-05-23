@@ -45,6 +45,25 @@
 #include "ig_lkm_common.h"
 #include "ig_lkm_proc_cache.h"
 
+/* ── 구형 커널 호환 shim ──
+ * READ_ONCE/WRITE_ONCE : 3.19+ 도입 (그 전엔 ACCESS_ONCE)
+ * ktime_get_real_ns()  : 3.17+ 도입 (그 전엔 ktime_to_ns(ktime_get_real()))
+ */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 19, 0)
+#  ifndef READ_ONCE
+#    define READ_ONCE(x)        ACCESS_ONCE(x)
+#  endif
+#  ifndef WRITE_ONCE
+#    define WRITE_ONCE(x, val)  (ACCESS_ONCE(x) = (val))
+#  endif
+#endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 17, 0)
+static inline u64 ktime_get_real_ns(void)
+{
+    return ktime_to_ns(ktime_get_real());
+}
+#endif
+
 /* ── 튜닝 상수 ────────────────────────────────────── */
 #define IG_PC_HASH_BITS      12                   /* 4096 buckets */
 #define IG_PC_MAX_ENTRIES    8192
@@ -201,7 +220,12 @@ static void capture_exec_meta(struct task_struct *t,
     if (arg_end > arg_start) {
         size_t want = (size_t)(arg_end - arg_start);
         if (want > cmd_len - 1) want = cmd_len - 1;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
         copied = access_process_vm(t, arg_start, cmd_out, want, FOLL_ANON);
+#else
+        /* <4.6: 5번째 인자가 gup_flags가 아니라 write(0=read) */
+        copied = access_process_vm(t, arg_start, cmd_out, want, 0);
+#endif
         if (copied <= 0) {
             cmd_out[0] = '\0';
         } else {
