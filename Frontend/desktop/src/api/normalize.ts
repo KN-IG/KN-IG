@@ -28,6 +28,7 @@ export interface RawEvent {
   FilePath: string;
   Pid?: number;
   DetectedBy?: string;
+  Blocked?: boolean; // lock 모드 실제 차단 여부(maintenance/감사 모드 false)
 }
 
 // Backend EventType(CREATE/MODIFY/DELETE/ATTRIB/MOVE) → UI 과거형.
@@ -59,7 +60,7 @@ export function normalizeEvent(e: RawEvent, agentMap: Record<string, Agent>): Fi
     agentId: e.AgentID,
     event: `${e.FilePath} ${type}`,
     type,
-    action: "BLOCKED", // 현 agent는 차단형 protect만 emit
+    action: e.Blocked ? "BLOCKED" : "AUDITED", // lock=차단, maintenance/감사=감사
     path: e.FilePath,
     pid: e.Pid,
     detectedBy: e.DetectedBy,

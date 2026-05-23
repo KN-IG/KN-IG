@@ -26,8 +26,16 @@ describe("normalizeEvent", () => {
     expect(e.type).toBe("MODIFIED");
     expect(e.agent).toBe("web-prod-01");
     expect(e.event).toBe("/etc/passwd MODIFIED");
-    expect(e.action).toBe("BLOCKED");
+    expect(e.action).toBe("AUDITED"); // Blocked 없음(maintenance/감사) → AUDITED
     expect(e.path).toBe("/etc/passwd");
+  });
+
+  it("Blocked=true(lock 모드 실제 차단) → action BLOCKED", () => {
+    const e = normalizeEvent(
+      { ID: 7, AgentID: "x", EventType: "DELETE", OccurredAt: "", FilePath: "/etc/x", Blocked: true },
+      {},
+    );
+    expect(e.action).toBe("BLOCKED");
   });
 
   it("미지정 EventType은 원본 유지, agentMap 미스 시 AgentID 폴백", () => {
