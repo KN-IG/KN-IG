@@ -21,6 +21,7 @@
 #include <linux/cred.h>
 #include <linux/rcupdate.h>
 #include <linux/pid.h>
+#include <linux/slab.h>
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 #  include <linux/sched/task.h>
@@ -126,38 +127,51 @@ static void ig_collect_chain(struct ig_lkm_event *ev)
 void ig_event_enqueue(uint64_t dev, uint64_t ino,
                        uint32_t op, uint32_t blocked)
 {
-    struct ig_lkm_event ev;
+    struct ig_lkm_event *ev;
     unsigned long flags;
 
-    memset(&ev, 0, sizeof(ev));
-    ev.dev     = dev;
-    ev.ino     = ino;
-    ev.op      = op;
-    ev.blocked = blocked;
-    ev.pid     = task_tgid_nr(current);
-    ev.uid     = from_kuid(&init_user_ns, current_uid());
+    /*
+     * 이벤트 구조체는 chain[16] 임베드로 ~7.5KB다. 이 함수는 LSM 훅에서
+     * 깊어진 syscall 스택 위에 동기 호출되므로 스택에 잡으면 커널 스택
+     * (8KB@3.x / 16KB@4.x)을 넘겨 인접 메모리를 손상시킨다(/etc 전체 감시 시
+     * 깊은 스택의 다양한 프로세스가 훅에 진입해 발현). → 힙으로 분리.
+     * GFP_ATOMIC: atomic 컨텍스트 안전, 실패 시 드롭(차단 결정은 이미 끝남).
+     */
+    ev = kmalloc(sizeof(*ev), GFP_ATOMIC);
+    if (!ev)
+        return;
+
+    memset(ev, 0, sizeof(*ev));
+    ev->dev     = dev;
+    ev->ino     = ino;
+    ev->op      = op;
+    ev->blocked = blocked;
+    ev->pid     = task_tgid_nr(current);
+    ev->uid     = from_kuid(&init_user_ns, current_uid());
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 17, 0)
-    ev.timestamp_ns = ktime_get_real_ns();
+    ev->timestamp_ns = ktime_get_real_ns();
 #else
-    ev.timestamp_ns = ktime_to_ns(ktime_get_real());
+    ev->timestamp_ns = ktime_to_ns(ktime_get_real());
 #endif
-    strncpy(ev.comm, current->comm, sizeof(ev.comm) - 1);
+    strncpy(ev->comm, current->comm, sizeof(ev->comm) - 1);
 
     /* PID ancestry chain 캡처 (race-free, in-kernel) */
-    ig_collect_chain(&ev);
+    ig_collect_chain(ev);
 
     /* Path: Safely retrieve with read_lock_irqsave */
     {
         unsigned long lflags;
         read_lock_irqsave(&ig_policy_lock, lflags);
-        strncpy(ev.path, inode_policy_path(dev, ino), sizeof(ev.path) - 1);
+        strncpy(ev->path, inode_policy_path(dev, ino), sizeof(ev->path) - 1);
         read_unlock_irqrestore(&ig_policy_lock, lflags);
     }
 
     spin_lock_irqsave(&ig_fifo_lock, flags);
-    if (kfifo_in(&ig_fifo, &ev, 1) == 0)
+    if (kfifo_in(&ig_fifo, ev, 1) == 0)
         pr_warn("event queue full (ino=%llu)\n", ino);
     spin_unlock_irqrestore(&ig_fifo_lock, flags);
+
+    kfree(ev);
 
     /* wake_up is prohibited in the workqueue (process context) — directly in the atomic context */
     (void)schedule_work(&ig_flush_work);

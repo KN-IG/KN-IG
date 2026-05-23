@@ -4,12 +4,13 @@
 
 ## 높음
 
-### LKM `/etc` 전체 감시 시 커널 크래시 (4.15 lkm415 / 3.x)
+### LKM `/etc` 전체 감시 시 커널 크래시 — 원인 규명 + 수정 적용, VM 검증 대기
 - **증상**: lock·maintenance 무관, `/etc` 전체(recursive) 감시 + 파일 op(`sudo touch /etc/ssh/...`) → `Segmentation fault`. 이후 `sudo` 등 정상 명령도 죽어 시스템 불안정.
-- **범위**: 특정 경로 감시(예: `/root/igtest`, `/etc/ssh`)는 maintenance·lock 모두 정상(PID chain 포함). **eBPF는 영향 없음**(/etc 전체도 안전).
-- **막힌 이유**: 런타임 커널 메모리 손상 → 코드 정독으론 미특정(정책 저장소는 동적 해시테이블, 훅은 NULL 가드, 읽기는 early-return). **oops `RIP`(죽는 함수) 트레이스가 있어야** 해당 함수 기준으로 C 수정 가능.
-- **다음 단계**: 크래시 후 재부팅(GRUB `modprobe.blacklist=ig_lkm`) → `journalctl -k -b -1`의 oops 확보 → `lkm415.c`/관련 C 수정 → `kn-ig --update` 전파.
-- **워크어라운드(현재)**: LKM 기기는 **특정 경로만 감시**, `/etc` 전체 보호가 필요하면 **eBPF(5.8+)** 사용.
+- **범위**: 특정 경로 감시(예: `/root/igtest`, `/etc/ssh`)는 maintenance·lock 모두 정상(PID chain 포함). **eBPF는 영향 없음**.
+- **근본 원인(규명)**: **커널 스택 오버플로**. `struct ig_lkm_event`가 `chain[16]`(엔트리당 448 B) 임베드로 **~7.3 KB**인데, `ig_event_enqueue()`가 이를 **커널 스택에** 잡았음. 이 함수는 LSM 훅에서 syscall→VFS→LSM로 깊어진 스택 위에 **동기 호출**되고, 커널 스택은 8 KB(3.x)~16 KB(4.x)뿐 → 단일 7.3 KB 프레임이 스택을 넘겨 인접 메모리(thread_info/이웃 스택) 손상 → 사후 시스템 전체 불안정. `/etc` 전체는 sudo/PAM/NSS/ld.so 등 깊은 스택의 다양한 프로세스가 매번 훅에 진입해 발현, 특정 경로(얕은 스택 test 프로세스)는 여유가 있어 미발현. eBPF는 bounded VM 스택이라 무관 — **모든 증상과 일치**.
+- **수정(적용)**: 이벤트 구조체를 스택 → 힙으로 분리. `ig_event_enqueue`는 `kmalloc(GFP_ATOMIC)`(atomic 안전, 실패 시 드롭·차단 결정은 이미 끝남), `ig_read`는 `kmalloc(GFP_KERNEL)`. ABI(구조체 레이아웃)·기능 불변.
+- **검증 대기**: darwin에서 커널 모듈 빌드 불가. **lkm415 VM에서** `kn-ig --update` → `/etc` 전체 감시 설정 → `sudo touch /etc/ssh/ssh_config` 반복이 더 이상 크래시 없이 이벤트만 올라오는지 확인 필요. 통과 시 `TROUBLESHOOTING.md`로 승격(커밋 해시 기재).
+- **워크어라운드(검증 전까지)**: LKM 기기는 **특정 경로만 감시**, `/etc` 전체 보호가 필요하면 **eBPF(5.8+)** 사용.
 
 ## 중간
 
