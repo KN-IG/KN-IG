@@ -6,8 +6,8 @@ Two contracts live here:
   ``internal.FileEvent`` / ``internal.Agent`` / ``internal.Alert``. Those structs
   carry no json tags, so Go marshals them with their exported (PascalCase) field
   names — hence the aliases below.
-* ``ReportData`` is the *response* contract, taken verbatim from the ``DATA``
-  object that ``Frontend/public/report-demo-v2.html`` renders.
+* ``ReportData`` is the *response* contract rendered by the console's
+  ``ReportV2`` component (Frontend/desktop/src/components/report/ReportV2.tsx).
 """
 
 from __future__ import annotations

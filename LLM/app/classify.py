@@ -1,4 +1,4 @@
-"""Deterministic path classification — ported from Frontend/public/js/api.js.
+"""Deterministic path classification.
 
 Maps a protected file path to its asset category, severity and the MITRE
 techniques most associated with tampering it. This is the *grounding* layer:
@@ -325,7 +325,7 @@ MITRE_GLOSSARY: Dict[str, Tuple[str, str]] = {
     "T1574.006": ("LD_PRELOAD를 통한 실행 흐름 가로채기", "정상 라이브러리를 우선 로드시켜 모든 호출에 공격자 코드가 개입하게 만드는 행위입니다."),
 }
 
-# Fixed kill-chain phases (matches report-demo-v2 killPhases order).
+# Fixed kill-chain phases (order matches the console report's killPhases).
 KILL_PHASES = ["초기 접근", "권한 상승", "자격증명 접근", "방어 회피", "영향"]
 
 # base technique id -> (tactic_ko, tactic_en, kill-phase index)

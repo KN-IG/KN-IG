@@ -1,7 +1,7 @@
 """KN-IG LLM Server — FastAPI entrypoint.
 
-Produces the period-summary report DATA (the contract rendered by
-Frontend/public/report-demo-v2.html) from the raw events/alerts/agents that the
+Produces the period-summary report DATA (the ReportData contract rendered by
+the console's ReportV2 component) from the raw events/alerts/agents that the
 Go backend forwards. Numbers are computed deterministically; an LLM (Gemini ->
 GPT fallback) writes the narrative; on any LLM failure a valid template report
 is still returned.
