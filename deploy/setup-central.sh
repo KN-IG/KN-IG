@@ -314,10 +314,12 @@ fi
 step "8/8 검증"
 if [[ "$WITH_SERVICE" -eq 1 ]] && have systemctl; then
     if wait_tcp 127.0.0.1 "$HTTP_PORT" 30 1; then
-        if http_ok "http://127.0.0.1:${HTTP_PORT}/api/agents"; then
-            ok "HTTP API 정상: http://127.0.0.1:${HTTP_PORT}/api/agents"
+        # /api/* 는 PIN 인증(Bearer)이 걸려 토큰 없이는 401이 정상이다. 따라서 무인증
+        # liveness는 /auth/status(200, DB도 읽으므로 DB 연결까지 확인)로 점검한다.
+        if http_ok "http://127.0.0.1:${HTTP_PORT}/auth/status"; then
+            ok "HTTP API 정상: /auth/status 200 (인증 게이트 동작, /api/*는 토큰 필요)"
         else
-            die "HTTP 포트는 열렸으나 /api/agents 비정상" "journalctl -u ${SVC_NAME} -n 50 --no-pager"
+            die "HTTP 포트는 열렸으나 /auth/status 비정상" "journalctl -u ${SVC_NAME} -n 50 --no-pager"
         fi
     else
         die "HTTP ${HTTP_PORT} 미개방 — 백엔드 기동 실패 추정" "journalctl -u ${SVC_NAME} -n 50 --no-pager"
