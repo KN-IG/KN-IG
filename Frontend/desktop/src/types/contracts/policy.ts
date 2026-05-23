@@ -1,28 +1,45 @@
-// Policy 페이지 계약.
-// 사용자 합의(deep-interview R2): "에이전트별 정책 배포 관리"(Agent↔Policy 매핑/배포 현황).
+// Policy 페이지 계약 — 에이전트별 정책 편집기.
 //
-// [BACKEND-CONTRACT — 잠정 mock 스키마]
-// 백엔드 /api/policy 는 미구현(Non-Goal, 다음 사이클). 아래는 mock 계약이며,
-// 백엔드 신설 시 합의·확정해야 합니다 (open-questions.md #1):
-//   Policy.scope : 정책 적용 범위(감시 경로/호스트 그룹). 잠정 string[].
-//                  PATH_PROFILES(api.js:79) 경로 분류를 서버화하는 방향과 연계 가능.
-//   Policy.rules : 규칙 목록. 잠정 string[](후속: 구조화 규칙 객체로 확장 가능).
+// 사용자 합의: "각 Agent 마다 실제 어떤 디렉토리와 파일을 감시하고 차단할지 설정하는 정책 설정 파일".
+// 모델은 에이전트 설정(agent.yaml / ig.conf)을 그대로 반영한다:
+//   - watch  : 감시 경로(inotify/fanotify). ig.conf [watch]의 recursive/single, fanotify mount.
+//   - protect: 변경/삭제를 차단(block)할 파일·디렉토리. ig.conf [protect].
+//
+// 백엔드 /api/policy 및 에이전트 원격 설정 수신은 미구현(다음 사이클). dev에서는 mock이
+// 저장/배포를 시뮬레이션한다(provider seam). 실연동 시 policyProvider.ts 한 줄을 교체한다.
 
-export interface Policy {
+export type WatchMode = "recursive" | "single" | "mount";
+
+// 감시 경로 한 건.
+export interface WatchRule {
   id: string;
-  name: string;
-  scope: string[];
-  rules: string[];
+  path: string;
+  mode: WatchMode;
+}
+
+export type ProtectKind = "file" | "dir";
+
+// 차단(보호) 대상 한 건.
+export interface ProtectRule {
+  id: string;
+  path: string;
+  kind: ProtectKind;
 }
 
 export type DeploymentStatus = "APPLIED" | "PENDING" | "FAILED";
 
-// 에이전트별 정책 배포 현황(Agent ↔ Policy 매핑).
-export interface PolicyDeployment {
+// 에이전트별 정책 전체.
+export interface AgentPolicy {
   agentId: string;
   agent: string; // hostname (표시용)
-  policyId: string;
-  policy: string; // 정책 이름(표시용)
-  appliedAt: string;
-  status: DeploymentStatus;
+  watch: WatchRule[];
+  protect: ProtectRule[];
+  updatedAt: string; // 마지막 저장 시각 "YYYY-MM-DD HH:mm:ss"
+  status: DeploymentStatus; // 마지막 배포 상태
+}
+
+// 편집 초안(저장 시 provider로 전달). updatedAt/status는 서버(mock)가 채운다.
+export interface PolicyDraft {
+  watch: WatchRule[];
+  protect: ProtectRule[];
 }
