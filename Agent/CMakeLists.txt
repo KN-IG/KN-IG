@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.10)
 project(agent C)
 
 # ── 언어 표준 ───────────────────────────────────
