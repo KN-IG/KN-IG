@@ -46,7 +46,21 @@ detect_local_role() {
     [[ -f /etc/systemd/system/kn-ig-central.service ]] && { echo central; return; }
     [[ -f /etc/systemd/system/kn-ig-llm.service ]]     && { echo llm; return; }
     [[ -f /etc/systemd/system/integrityguard.service ]] && { echo agent; return; }
+    # 비-systemd(upstart/sysvinit) 폴백 — init.d 스크립트 또는 설치 흔적
+    [[ -f /etc/init.d/integrityguard ]] && { echo agent; return; }
+    [[ -f /etc/ig_monitor/ig.conf && -x /usr/local/bin/agent ]] && { echo agent; return; }
     echo ""
+}
+# agent가 systemd로 관리되는지 (아니면 init.d/pid 기반)
+agent_uses_systemd() { have systemctl && [[ -f /etc/systemd/system/integrityguard.service ]]; }
+# 역할 서비스 동작 여부 — systemd / init.d(pid) 모두 커버
+svc_running() {
+    local role="$1"
+    if [[ "$role" == agent ]] && ! agent_uses_systemd; then
+        [[ -f /tmp/ig_monitor.pid ]] && kill -0 "$(cat /tmp/ig_monitor.pid 2>/dev/null)" 2>/dev/null
+        return
+    fi
+    svc_active "$(unit_for_role "$role")"
 }
 # env 파일에서 KEY=값 추출
 read_env_val() { [[ -f "$1" ]] || return 1; grep -E "^$2=" "$1" 2>/dev/null | head -1 | cut -d= -f2-; }
@@ -68,8 +82,9 @@ cmd_status() {
         return 0
     fi
     local svc; svc="$(unit_for_role "$role")"
+    [[ "$role" == agent ]] && ! agent_uses_systemd && svc="integrityguard (init.d)"
     printf '  역할: %s%s%s   서비스: %s\n' "$_C_BLD" "$role" "$_C_RST" "$svc"
-    if svc_active "$svc"; then ok "서비스 active"; else warn "서비스 비활성 — kn-ig --logs 로 원인 확인"; fi
+    if svc_running "$role"; then ok "서비스 active"; else warn "서비스 비활성 — kn-ig --logs 로 원인 확인"; fi
 
     case "$role" in
         central)
@@ -105,8 +120,16 @@ cmd_status() {
 cmd_logs() {
     local role; role="$(detect_local_role)"
     [[ -n "$role" ]] || { warn "설치된 KN-IG 역할이 없습니다."; return 1; }
-    have systemctl || { warn "systemctl 없음 — 로그 조회 불가"; return 1; }
     ig_init_sudo
+    # 비-systemd agent → 로그 파일(tail). systemd → journalctl.
+    if [[ "$role" == agent ]] && ! agent_uses_systemd; then
+        local lf=/var/log/ig_monitor.log
+        [[ -f "$lf" ]] || { warn "로그 파일 없음: $lf (agent 미기동?)"; return 1; }
+        if [[ "$FOLLOW" -eq 1 ]]; then log "$lf 실시간 로그 (Ctrl-C 종료)"; $SUDO tail -f "$lf"
+        else $SUDO tail -n 80 "$lf"; fi
+        return 0
+    fi
+    have systemctl || { warn "systemctl 없음 — 로그 조회 불가"; return 1; }
     local svc; svc="$(unit_for_role "$role")"
     if [[ "$FOLLOW" -eq 1 ]]; then
         log "${svc} 실시간 로그 (Ctrl-C 종료)"
@@ -125,11 +148,19 @@ cmd_uninstall() {
     local go; go="$(ask "이 VM에서 ${role} 서비스를 제거할까요?$([[ $PURGE -eq 1 ]] && echo ' (--purge: 데이터/설정 포함)') (y/N)" "N")"
     [[ "$go" =~ ^[Yy] ]] || { log "취소했습니다."; return 0; }
 
-    $SUDO systemctl disable --now "$svc" 2>/dev/null || true
-    $SUDO rm -f "/etc/systemd/system/${svc}"
-    [[ "$role" == "agent" ]] && $SUDO rm -f /etc/systemd/system/integrityguard.service.d/10-mode.conf 2>/dev/null || true
-    $SUDO systemctl daemon-reload 2>/dev/null || true
-    ok "서비스 제거: ${svc}"
+    if [[ "$role" == agent ]] && ! agent_uses_systemd; then
+        [[ -f /etc/init.d/integrityguard ]] && $SUDO /etc/init.d/integrityguard stop 2>/dev/null || true
+        if   have update-rc.d; then $SUDO update-rc.d -f integrityguard remove >/dev/null 2>&1 || true
+        elif have chkconfig;  then $SUDO chkconfig --del integrityguard 2>/dev/null || true; fi
+        $SUDO rm -f /etc/init.d/integrityguard
+        ok "서비스 제거: integrityguard (init.d)"
+    else
+        $SUDO systemctl disable --now "$svc" 2>/dev/null || true
+        $SUDO rm -f "/etc/systemd/system/${svc}"
+        [[ "$role" == "agent" ]] && $SUDO rm -f /etc/systemd/system/integrityguard.service.d/10-mode.conf 2>/dev/null || true
+        $SUDO systemctl daemon-reload 2>/dev/null || true
+        ok "서비스 제거: ${svc}"
+    fi
 
     if [[ "$PURGE" -eq 1 ]]; then
         case "$role" in
