@@ -1,14 +1,12 @@
-// 대시보드 — KPI + 추세 차트 + 에이전트(드릴다운) + 알림 통합 + 이벤트 테이블.
+// 대시보드 — KPI + 추세 차트 + 에이전트(드릴다운) + 이벤트 테이블.
 // 5초 폴링(useDashboardData) + 연결 상태 보고(ConnectionContext).
 import { useState } from "react";
 import { useDashboardData } from "@/api/hooks/useDashboardData";
-import { alertsProvider } from "@/api/providers/coreProviders";
 import { KpiCards } from "@/components/dashboard/KpiCards";
 import { TrendCharts } from "@/components/dashboard/TrendCharts";
 import { AgentTable } from "@/components/dashboard/AgentTable";
 import { AgentDrilldown } from "@/components/dashboard/AgentDrilldown";
 import { EventTable } from "@/components/dashboard/EventTable";
-import { AlertsPanel } from "@/components/dashboard/AlertsPanel";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Agent, DashboardMetric } from "@/types/contracts";
 
@@ -21,7 +19,7 @@ const EMPTY_METRIC: DashboardMetric = {
 };
 
 export default function Dashboard() {
-  const { data, loading, error, refetch } = useDashboardData();
+  const { data, loading, error } = useDashboardData();
   const [selected, setSelected] = useState<Agent | null>(null);
 
   if (loading && !data) {
@@ -36,15 +34,6 @@ export default function Dashboard() {
 
   const d = data ?? { agents: [], events: [], alerts: [], metric: EMPTY_METRIC };
 
-  const handleResolve = async (id: string) => {
-    try {
-      await alertsProvider.resolve(id);
-      await refetch();
-    } catch {
-      // 실패 시 다음 폴링 사이클에서 갱신됩니다.
-    }
-  };
-
   return (
     <div className="flex flex-col gap-6">
       {error && !data && (
@@ -54,10 +43,7 @@ export default function Dashboard() {
       )}
       <KpiCards metric={d.metric} />
       <TrendCharts events={d.events} />
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <AgentTable agents={d.agents} onSelect={setSelected} />
-        <AlertsPanel alerts={d.alerts} onResolve={handleResolve} />
-      </div>
+      <AgentTable agents={d.agents} onSelect={setSelected} />
       <EventTable events={d.events} agents={d.agents} />
       <AgentDrilldown
         agent={selected}

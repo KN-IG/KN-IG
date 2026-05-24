@@ -15,3 +15,20 @@ export function StatusBadge({ status }: { status: AgentStatus | string }) {
     </span>
   );
 }
+
+// 점 + 글씨 형태 — Navbar 연결 상태 표기와 동일 톤.
+const DOT: Record<string, { label: string; cls: string }> = {
+  ONLINE: { label: "온라인", cls: "bg-emerald-500" },
+  OFFLINE: { label: "오프라인", cls: "bg-rose-500" },
+  UNKNOWN: { label: "알 수 없음", cls: "bg-muted-foreground/50" },
+};
+
+export function StatusDot({ status }: { status: AgentStatus | string }) {
+  const m = DOT[status] ?? DOT.UNKNOWN;
+  return (
+    <span className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+      <span className={`h-2 w-2 shrink-0 rounded-full ${m.cls}`} />
+      <span>{m.label}</span>
+    </span>
+  );
+}

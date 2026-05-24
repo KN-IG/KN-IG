@@ -4,10 +4,11 @@
 import {
   Area,
   AreaChart,
-  Bar,
-  BarChart,
   CartesianGrid,
   Cell,
+  Legend,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -97,17 +98,34 @@ export function TrendCharts({ events }: { events: FileEvent[] }) {
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dist} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="type" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
-                <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "hsl(var(--muted) / 0.4)" }} />
-                <Bar dataKey="count" name="건수" radius={[4, 4, 0, 0]}>
+              <PieChart>
+                <Pie
+                  data={dist}
+                  dataKey="count"
+                  nameKey="type"
+                  cx="42%"
+                  cy="50%"
+                  innerRadius={52}
+                  outerRadius={84}
+                  paddingAngle={2}
+                  stroke="hsl(var(--card))"
+                  strokeWidth={2}
+                >
                   {dist.map((_, i) => (
                     <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                   ))}
-                </Bar>
-              </BarChart>
+                </Pie>
+                <Tooltip contentStyle={TOOLTIP_STYLE} />
+                <Legend
+                  layout="vertical"
+                  align="right"
+                  verticalAlign="middle"
+                  iconType="circle"
+                  formatter={(value) => (
+                    <span className="text-[12px] text-muted-foreground">{value}</span>
+                  )}
+                />
+              </PieChart>
             </ResponsiveContainer>
           )}
         </CardContent>

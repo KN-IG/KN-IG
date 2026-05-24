@@ -3,10 +3,10 @@
 import type { Agent, FileEvent, Alert } from "@/types/contracts";
 
 export const MOCK_AGENTS: Agent[] = [
-  { id: "agent-01", hostname: "web-prod-01", ip: "10.0.1.11", status: "ONLINE" },
-  { id: "agent-02", hostname: "db-prod-01", ip: "10.0.1.21", status: "ONLINE" },
-  { id: "agent-03", hostname: "app-stg-01", ip: "10.0.2.31", status: "OFFLINE" },
-  { id: "agent-04", hostname: "hist-ot-01", ip: "10.0.3.41", status: "ONLINE" },
+  { id: "agent-01", hostname: "web-prod-01", ip: "10.0.1.11", status: "ONLINE", os: "Ubuntu 24.04.1 LTS", kernel: "6.8.0-31-generic", guardian: "eBPF LSM" },
+  { id: "agent-02", hostname: "db-prod-01", ip: "10.0.1.21", status: "ONLINE", os: "Rocky Linux 9.3", kernel: "5.14.0-362.el9", guardian: "LKM415" },
+  { id: "agent-03", hostname: "app-stg-01", ip: "10.0.2.31", status: "OFFLINE", os: "CentOS 7.9", kernel: "3.10.0-1160.el7", guardian: "LKM310" },
+  { id: "agent-04", hostname: "hist-ot-01", ip: "10.0.3.41", status: "ONLINE", os: "Ubuntu 16.04.7 LTS", kernel: "4.15.0-142-generic", guardian: "LKM42" },
 ];
 
 function ts(hoursAgo: number, minAgo = 0): string {

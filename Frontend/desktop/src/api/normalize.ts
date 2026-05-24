@@ -18,6 +18,9 @@ export interface RawAgent {
   Hostname?: string;
   IP?: string;
   Status?: string;
+  OS?: string;
+  MonitorType?: string; // 모니터링 방식 (lkm/ebpf, 추후 LKM310 등으로 세분화 가능)
+  Kernel?: string; // 백엔드 추후 제공 시 자동 반영(현재 미제공)
 }
 
 export interface RawEvent {
@@ -46,6 +49,9 @@ export function normalizeAgent(a: RawAgent): Agent {
     hostname: a.Hostname || a.AgentID,
     ip: a.IP || "",
     status: (a.Status || "unknown").toUpperCase() as AgentStatus,
+    os: a.OS || "",
+    kernel: a.Kernel || "",
+    guardian: a.MonitorType || "",
   };
 }
 

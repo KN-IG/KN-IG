@@ -12,6 +12,9 @@ export interface Agent {
   hostname: string;
   ip: string;
   status: AgentStatus;
+  os?: string; // 운영체제 (예: "Ubuntu 24.04.1 LTS")
+  kernel?: string; // 커널 버전 (백엔드 미제공 시 빈 값 → "—" 표기)
+  guardian?: string; // Guardian 탐지 메커니즘 (예: LKM310 / LKM42 / LKM415 / eBPF LSM). 백엔드 MonitorType.
 }
 
 // Backend EventType(CREATE/MODIFY/DELETE/ATTRIB/MOVE) → UI 과거형 표기.

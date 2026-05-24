@@ -138,13 +138,14 @@ export function EventTable({
               <TableHead>시간</TableHead>
               <TableHead>에이전트</TableHead>
               <TableHead>이벤트</TableHead>
+              <TableHead>경로</TableHead>
               <TableHead>조치</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {paged.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
                   표시할 이벤트가 없습니다.
                 </TableCell>
               </TableRow>
@@ -153,18 +154,18 @@ export function EventTable({
                 <TableRow key={e.id}>
                   <TableCell className="tabular-nums text-muted-foreground">{e.time}</TableCell>
                   <TableCell>{e.agent}</TableCell>
-                  <TableCell className="max-w-xs">
-                    <span className="flex items-center gap-2">
-                      <span
-                        className={cn(
-                          "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium",
-                          TYPE_CLS[String(e.type)] ?? TYPE_DEFAULT,
-                        )}
-                      >
-                        {String(e.type)}
-                      </span>
-                      <span className="truncate text-foreground/80">{e.path}</span>
+                  <TableCell>
+                    <span
+                      className={cn(
+                        "inline-block rounded-full px-2 py-0.5 text-xs font-medium",
+                        TYPE_CLS[String(e.type)] ?? TYPE_DEFAULT,
+                      )}
+                    >
+                      {String(e.type)}
                     </span>
+                  </TableCell>
+                  <TableCell className="max-w-xs">
+                    <span className="block truncate text-foreground/80">{e.path}</span>
                   </TableCell>
                   <TableCell>
                     <span
