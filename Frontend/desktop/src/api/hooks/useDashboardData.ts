@@ -1,8 +1,9 @@
 // 대시보드 데이터 훅 — agents/events/alerts를 5초 폴링으로 동기화하고 KPI 집계.
 // provider 경유(직접 fetch 금지).
 // 폴링 성공/실패는 ConnectionContext로 보고 → Navbar 연결 dot에 반영.
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { usePolling, type PollingState } from "./usePolling";
+import { useEventStream } from "./useEventStream";
 import { useConnection } from "@/state/ConnectionContext";
 import {
   agentsProvider,
@@ -60,5 +61,26 @@ export function useDashboardData(): PollingState<DashboardData> {
     return { agents, events, alerts, metric: computeMetric(agents, events, alerts) };
   }, []);
 
-  return usePolling<DashboardData>(fetcher, POLL_MS, setConnected);
+  const state = usePolling<DashboardData>(fetcher, POLL_MS, setConnected);
+
+  // SSE 이벤트 수신 시 300ms debounce 후 즉시 재조회 — 이벤트/agent 상태를 바로 반영.
+  // (5초 폴링은 백업: SSE로 안 오는 변화나 offline 전환 감지용)
+  const refetchRef = useRef(state.refetch);
+  refetchRef.current = state.refetch;
+  const debRef = useRef<number | null>(null);
+  useEventStream(() => {
+    if (debRef.current !== null) return; // 이미 예약됨 → 이벤트 폭주 시 한 번으로 묶음
+    debRef.current = window.setTimeout(() => {
+      debRef.current = null;
+      void refetchRef.current();
+    }, 300);
+  });
+  useEffect(
+    () => () => {
+      if (debRef.current !== null) window.clearTimeout(debRef.current);
+    },
+    [],
+  );
+
+  return state;
 }
