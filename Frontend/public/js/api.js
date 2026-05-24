@@ -1,4 +1,4 @@
-// Mirror Server API client.
+// Central Server API client.
 //   GET /api/agents          — 에이전트 목록
 //   GET /api/events?limit=N  — 최근 파일 이벤트 N건
 // Bearer 토큰을 자동 첨부하고, 401 응답 시 즉시 로그인으로 리다이렉트한다.
@@ -417,7 +417,7 @@ function classifyPath(path) {
 }
 
 const Api = {
-    // Mirror Server에서 agents + events를 가져와 캐시 갱신.
+    // Central Server에서 agents + events를 가져와 캐시 갱신.
     // app.js가 init/주기마다 await Api.refresh() 호출.
     async refresh() {
         const [agentsRes, eventsRes] = await Promise.all([

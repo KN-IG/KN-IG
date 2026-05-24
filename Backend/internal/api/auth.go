@@ -32,8 +32,8 @@ const (
 	lockoutWindow = 5 * time.Minute
 )
 
-// PINAuth : 콘솔 PIN 인증 핸들러
-type PINAuth struct {
+// Auth : 콘솔 PIN 인증 핸들러
+type Auth struct {
 	store internal.AuthStore
 
 	sessMu   sync.RWMutex
@@ -44,9 +44,9 @@ type PINAuth struct {
 	lockedUntil time.Time
 }
 
-// NewPINAuth : PINAuth 생성
-func NewPINAuth(store internal.AuthStore) *PINAuth {
-	return &PINAuth{
+// NewAuth : Auth 생성
+func NewAuth(store internal.AuthStore) *Auth {
+	return &Auth{
 		store:    store,
 		sessions: make(map[string]time.Time),
 	}
@@ -57,7 +57,7 @@ type pinBody struct {
 }
 
 // Status : GET /auth/status
-func (a *PINAuth) Status(c *gin.Context) {
+func (a *Auth) Status(c *gin.Context) {
 	hash, err := a.store.GetPINHash(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -73,7 +73,7 @@ func (a *PINAuth) Status(c *gin.Context) {
 }
 
 // Setup : POST /auth/setup (최초 PIN 설정)
-func (a *PINAuth) Setup(c *gin.Context) {
+func (a *Auth) Setup(c *gin.Context) {
 	var body pinBody
 	if err := c.ShouldBindJSON(&body); err != nil || !validPin(body.Pin) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "pin must be 4-8 digits"})
@@ -103,7 +103,7 @@ func (a *PINAuth) Setup(c *gin.Context) {
 }
 
 // Login : POST /auth/login
-func (a *PINAuth) Login(c *gin.Context) {
+func (a *Auth) Login(c *gin.Context) {
 	if a.isLocked() {
 		c.JSON(http.StatusLocked, gin.H{"error": "too many failed attempts, try later"})
 		return
@@ -134,7 +134,7 @@ func (a *PINAuth) Login(c *gin.Context) {
 }
 
 // Authorize : /api/* 진입 미들웨어. Bearer 토큰 검증.
-func (a *PINAuth) Authorize(c *gin.Context) {
+func (a *Auth) Authorize(c *gin.Context) {
 	h := c.GetHeader("Authorization")
 	if !strings.HasPrefix(h, "Bearer ") {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
@@ -158,7 +158,7 @@ func (a *PINAuth) Authorize(c *gin.Context) {
 	c.Next()
 }
 
-func (a *PINAuth) issue() string {
+func (a *Auth) issue() string {
 	var b [32]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		// crypto/rand 실패는 시스템 단위 장애. 패닉이 합리적.
@@ -171,13 +171,13 @@ func (a *PINAuth) issue() string {
 	return tok
 }
 
-func (a *PINAuth) isLocked() bool {
+func (a *Auth) isLocked() bool {
 	a.failMu.Lock()
 	defer a.failMu.Unlock()
 	return time.Now().Before(a.lockedUntil)
 }
 
-func (a *PINAuth) recordFailure() {
+func (a *Auth) recordFailure() {
 	a.failMu.Lock()
 	defer a.failMu.Unlock()
 	a.failCount++
@@ -187,7 +187,7 @@ func (a *PINAuth) recordFailure() {
 	}
 }
 
-func (a *PINAuth) resetFailures() {
+func (a *Auth) resetFailures() {
 	a.failMu.Lock()
 	a.failCount = 0
 	a.lockedUntil = time.Time{}

@@ -23,3 +23,7 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# macOS WKWebView는 window.print()를 지원하지 않아 NSPrintOperation을 직접 호출(print_report 커맨드).
+[target.'cfg(target_os = "macos")'.dependencies]
+objc = "0.2"
+

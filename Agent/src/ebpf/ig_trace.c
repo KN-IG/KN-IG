@@ -8,6 +8,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
+#include <time.h>
 #include <unistd.h>
 
 /* st_dev(userspace OLD: major<<8) → 커널 dev_t(NEW: major<<20) 변환 */
@@ -426,6 +427,24 @@ static ig_event_type_t op_to_ig_type(__u32 op_mask)
     return IG_EVENT_ACCESS;
 }
 
+/* bpf_ktime_get_ns()=CLOCK_MONOTONIC → CLOCK_REALTIME 오프셋(ns).
+ * 매 이벤트 clock_gettime 2회는 고빈도에서 비싸므로 캐시하고, 1024 이벤트마다
+ * 재계산해 NTP 시각 보정을 반영한다(ring-buffer 단일 소비자 스레드라 static 안전). */
+static int64_t ig_mono_to_real_offset_ns(void)
+{
+    static int64_t cached = 0;
+    static unsigned long ctr = 0;
+    if ((ctr++ & 0x3FF) == 0) {
+        struct timespec rt, mono;
+        if (clock_gettime(CLOCK_REALTIME, &rt) == 0 &&
+            clock_gettime(CLOCK_MONOTONIC, &mono) == 0) {
+            cached = ((int64_t)rt.tv_sec  - (int64_t)mono.tv_sec)  * 1000000000LL
+                   + ((int64_t)rt.tv_nsec - (int64_t)mono.tv_nsec);
+        }
+    }
+    return cached;
+}
+
 static int handle_audit_event(void *ctx, void *data, size_t data_sz)
 {
     ig_event_queue_t       *queue = ctx;
@@ -471,11 +490,9 @@ static int handle_audit_event(void *ctx, void *data, size_t data_sz)
         memset(&ev, 0, sizeof(ev));
         ev.type      = op_to_ig_type(e->op_mask);
         ev.source    = IG_SOURCE_EBPF;
-        /* TODO: e->ts_ns는 bpf_ktime_get_ns()(CLOCK_MONOTONIC, 부팅 후 ns)라
-         * 그대로 unix epoch로 캐스팅하면 1970+부팅후초가 됨.
-         * 부팅시각 보정(CLOCK_REALTIME - CLOCK_MONOTONIC) 또는
-         * .bpf.c의 bpf_ktime_get_real_ns() 전환으로 수정 필요. */
-        ev.timestamp = (time_t)(e->ts_ns / 1000000000ULL);
+        /* e->ts_ns(CLOCK_MONOTONIC)를 wall-clock(epoch)으로 보정. 오프셋은 캐시됨. */
+        ev.timestamp = (time_t)(((int64_t)e->ts_ns + ig_mono_to_real_offset_ns())
+                                / 1000000000LL);
         ev.pid       = (pid_t)e->pid;
         ev.uid       = (uid_t)e->uid;
         ev.dev       = e->dev;

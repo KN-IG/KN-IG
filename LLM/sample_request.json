@@ -1,0 +1,34 @@
+{
+  "range": { "from": "2026-05-14T00:00:00Z", "to": "2026-05-21T00:00:00Z" },
+  "agents": [
+    { "AgentID": "a-hmi-01", "Hostname": "HMI-01", "IP": "10.0.0.11", "Status": "online" },
+    { "AgentID": "a-ews-02", "Hostname": "EWS-02", "IP": "10.0.0.12", "Status": "online" },
+    { "AgentID": "a-hist-03", "Hostname": "Historian-03", "IP": "10.0.0.13", "Status": "offline" }
+  ],
+  "events": [
+    { "ID": 1,  "AgentID": "a-hmi-01",  "EventType": "MODIFY", "FilePath": "/etc/shadow",                 "FileName": "shadow",       "Pid": 1502, "DetectedBy": "ebpf", "OccurredAt": "2026-05-14T09:12:00Z" },
+    { "ID": 2,  "AgentID": "a-ews-02",  "EventType": "MODIFY", "FilePath": "/etc/ssh/sshd_config",        "FileName": "sshd_config",  "Pid": 2333, "DetectedBy": "lkm",  "OccurredAt": "2026-05-15T11:01:00Z" },
+    { "ID": 3,  "AgentID": "a-hmi-01",  "EventType": "MODIFY", "FilePath": "/etc/myapp/config.yaml",      "FileName": "config.yaml",  "Pid": 880,  "DetectedBy": "ebpf", "OccurredAt": "2026-05-16T14:22:00Z" },
+    { "ID": 4,  "AgentID": "a-hist-03", "EventType": "MODIFY", "FilePath": "/etc/crontab",                "FileName": "crontab",      "Pid": 1290, "DetectedBy": "lkm",  "OccurredAt": "2026-05-16T18:40:00Z" },
+    { "ID": 5,  "AgentID": "a-ews-02",  "EventType": "MODIFY", "FilePath": "/var/www/html/index.html",    "FileName": "index.html",   "Pid": 3400, "DetectedBy": "ebpf", "OccurredAt": "2026-05-17T08:05:00Z" },
+    { "ID": 6,  "AgentID": "a-hmi-01",  "EventType": "MODIFY", "FilePath": "/etc/shadow",                 "FileName": "shadow",       "Pid": 1502, "DetectedBy": "ebpf", "OccurredAt": "2026-05-18T15:01:00Z" },
+    { "ID": 7,  "AgentID": "a-ews-02",  "EventType": "MODIFY", "FilePath": "/etc/sudoers.d/zz_temp",      "FileName": "zz_temp",      "Pid": 2334, "DetectedBy": "lkm",  "OccurredAt": "2026-05-18T15:03:00Z" },
+    { "ID": 8,  "AgentID": "a-hist-03", "EventType": "MODIFY", "FilePath": "/etc/ssh/sshd_config",        "FileName": "sshd_config",  "Pid": 3501, "DetectedBy": "ebpf", "OccurredAt": "2026-05-18T15:06:00Z" },
+    { "ID": 9,  "AgentID": "a-hmi-01",  "EventType": "DELETE", "FilePath": "/var/log/audit/audit.log",    "FileName": "audit.log",    "Pid": 1502, "DetectedBy": "ebpf", "OccurredAt": "2026-05-18T15:12:00Z" },
+    { "ID": 10, "AgentID": "a-ews-02",  "EventType": "MODIFY", "FilePath": "/etc/passwd",                 "FileName": "passwd",       "Pid": 2210, "DetectedBy": "lkm",  "OccurredAt": "2026-05-18T16:30:00Z" },
+    { "ID": 11, "AgentID": "a-hmi-01",  "EventType": "MODIFY", "FilePath": "/usr/bin/ssh",                "FileName": "ssh",          "Pid": 900,  "DetectedBy": "ebpf", "OccurredAt": "2026-05-19T10:11:00Z" },
+    { "ID": 12, "AgentID": "a-hist-03", "EventType": "MODIFY", "FilePath": "/etc/resolv.conf",            "FileName": "resolv.conf",  "Pid": 1300, "DetectedBy": "lkm",  "OccurredAt": "2026-05-19T13:45:00Z" },
+    { "ID": 13, "AgentID": "a-ews-02",  "EventType": "MODIFY", "FilePath": "/tmp/.sysupd.py",             "FileName": ".sysupd.py",   "Pid": 4001, "DetectedBy": "ebpf", "OccurredAt": "2026-05-20T07:20:00Z" },
+    { "ID": 14, "AgentID": "a-hmi-01",  "EventType": "MODIFY", "FilePath": "/etc/nginx/nginx.conf",       "FileName": "nginx.conf",   "Pid": 770,  "DetectedBy": "ebpf", "OccurredAt": "2026-05-20T09:30:00Z" },
+    { "ID": 15, "AgentID": "a-hist-03", "EventType": "DELETE", "FilePath": "/var/log/syslog",             "FileName": "syslog",       "Pid": 1290, "DetectedBy": "lkm",  "OccurredAt": "2026-05-20T22:05:00Z" }
+  ],
+  "prevEvents": [
+    { "ID": 101, "AgentID": "a-hmi-01", "EventType": "MODIFY", "FilePath": "/etc/myapp/config.yaml", "FileName": "config.yaml", "Pid": 880, "DetectedBy": "ebpf", "OccurredAt": "2026-05-07T09:00:00Z" },
+    { "ID": 102, "AgentID": "a-ews-02", "EventType": "MODIFY", "FilePath": "/etc/shadow",            "FileName": "shadow",      "Pid": 200, "DetectedBy": "lkm",  "OccurredAt": "2026-05-09T12:00:00Z" },
+    { "ID": 103, "AgentID": "a-hmi-01", "EventType": "MODIFY", "FilePath": "/var/log/audit/audit.log", "FileName": "audit.log", "Pid": 201, "DetectedBy": "ebpf", "OccurredAt": "2026-05-10T15:00:00Z" }
+  ],
+  "alerts": [
+    { "ID": 1, "AgentID": "a-hmi-01",  "Severity": "HIGH",   "Message": "burst: 5 events in 60s", "Resolved": false, "CreatedAt": "2026-05-18T15:13:00Z" },
+    { "ID": 2, "AgentID": "a-hist-03", "Severity": "MEDIUM", "Message": "burst: 3 events in 60s", "Resolved": false, "CreatedAt": "2026-05-20T22:06:00Z" }
+  ]
+}

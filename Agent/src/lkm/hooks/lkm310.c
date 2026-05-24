@@ -16,6 +16,7 @@
 #include <linux/limits.h>
 #include <linux/fcntl.h>
 #include <linux/xattr.h>
+#include <linux/sched.h>   /* current / struct task_struct (구형 커널에서 명시 필요) */
 #include <asm/unistd.h>
 
 #include "../ig_lkm_policy.h"

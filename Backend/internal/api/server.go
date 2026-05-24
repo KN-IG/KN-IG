@@ -4,37 +4,42 @@ import (
 	"log"
 
 	"github.com/KN-IG/KN-IG/Backend/internal"
+	"github.com/KN-IG/KN-IG/Backend/internal/report"
 	"github.com/gin-gonic/gin"
 )
 
 // Server : REST API 서버
 type Server struct {
-	router     *gin.Engine
-	agentStore internal.AgentStore
-	eventStore internal.EventStore
-	alertStore internal.AlertStore
-	publisher  internal.EventPublisher
-	auth       *PINAuth
+	router       *gin.Engine
+	agentStore   internal.AgentStore
+	eventStore   internal.EventStore
+	alertStore   internal.AlertStore
+	publisher    internal.EventPublisher
+	auth         *Auth          // 콘솔 PIN 인증 (항상 활성)
+	reportClient *report.Client // nil이면 리포트 생성 비활성 (LLM_SERVER_URL 미설정)
 }
 
-// NewServer : 서버 생성. PIN 인증 endpoint와 /api/* 보호 미들웨어를 등록한다.
+// NewServer : 서버 생성. /auth/* 등록 + /api/* 콘솔 PIN 인증(Bearer).
+// reportClient가 nil이면 POST /api/reports/summary는 503을 반환한다.
 func NewServer(
 	agentStore internal.AgentStore,
 	eventStore internal.EventStore,
 	alertStore internal.AlertStore,
 	publisher internal.EventPublisher,
-	auth *PINAuth,
+	auth *Auth,
+	reportClient *report.Client,
 ) *Server {
 	router := gin.Default()
 	router.Use(corsMiddleware())
 
 	s := &Server{
-		router:     router,
-		agentStore: agentStore,
-		eventStore: eventStore,
-		alertStore: alertStore,
-		publisher:  publisher,
-		auth:       auth,
+		router:       router,
+		agentStore:   agentStore,
+		eventStore:   eventStore,
+		alertStore:   alertStore,
+		publisher:    publisher,
+		auth:         auth,
+		reportClient: reportClient,
 	}
 
 	s.registerRoutes()
@@ -44,18 +49,14 @@ func NewServer(
 
 // registerRoutes : API 엔드포인트 등록
 func (s *Server) registerRoutes() {
-	if s.auth != nil {
-		// 인증 endpoint는 PIN setup/login/status를 위해 공개한다.
-		authGrp := s.router.Group("/auth")
-		authGrp.GET("/status", s.auth.Status)
-		authGrp.POST("/setup", s.auth.Setup)
-		authGrp.POST("/login", s.auth.Login)
-	}
+	// 콘솔 PIN 인증 endpoint (자체적으로 인증 불필요)
+	authGrp := s.router.Group("/auth")
+	authGrp.GET("/status", s.auth.Status)
+	authGrp.POST("/setup", s.auth.Setup)
+	authGrp.POST("/login", s.auth.Login)
 
 	api := s.router.Group("/api")
-	if s.auth != nil {
-		api.Use(s.auth.Authorize)
-	}
+	api.Use(s.auth.Authorize)
 
 	// Agent API
 	api.GET("/agents", s.handleListAgents)
@@ -70,6 +71,10 @@ func (s *Server) registerRoutes() {
 	// Alert API
 	api.GET("/alerts", s.handleListAlerts)
 	api.PATCH("/alerts/:id/resolve", s.handleResolveAlert)
+
+	// Report API (LLM 서버 프록시)
+	api.POST("/reports/summary", s.handleGenerateSummaryReport)
+	api.POST("/reports/summary/stream", s.handleGenerateSummaryReportStream)
 }
 
 // corsMiddleware : Tauri 콘솔(별 origin)이 직접 호출 가능하도록 허용.

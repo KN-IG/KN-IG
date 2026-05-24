@@ -11,6 +11,7 @@ import (
 	"github.com/KN-IG/KN-IG/Backend/internal/collector"
 	"github.com/KN-IG/KN-IG/Backend/internal/config"
 	"github.com/KN-IG/KN-IG/Backend/internal/engine"
+	"github.com/KN-IG/KN-IG/Backend/internal/report"
 	"github.com/KN-IG/KN-IG/Backend/internal/enrollment"
 	"github.com/KN-IG/KN-IG/Backend/internal/store"
 )
@@ -32,6 +33,7 @@ func main() {
 	caCert := envOr("TLS_CA", "./certs/ca.crt")
 	serverCert := envOr("TLS_CERT", "./certs/server.crt")
 	serverKey := envOr("TLS_KEY", "./certs/server.key")
+	llmServerURL := envOr("LLM_SERVER_URL", "http://127.0.0.1:8088")
 
 	agentStore := store.NewMySQLAgentStore(db.Conn)
 	enrollmentStore := store.NewMySQLEnrollmentStore(db.Conn)
@@ -41,7 +43,7 @@ func main() {
 
 	publisher := api.NewSSEPublisher()
 	processor := engine.NewEventProcessor(alertStore)
-	auth := api.NewPINAuth(authStore)
+	auth := api.NewAuth(authStore)
 	log.Println("콘솔 PIN 인증 활성")
 
 	tlsCfg, err := collector.NewTLSConfig(caCert, serverCert, serverKey)
@@ -59,7 +61,10 @@ func main() {
 		processor.Process,
 	)
 
-	server := api.NewServer(agentStore, eventStore, alertStore, publisher, auth)
+	reportClient := report.NewClient(llmServerURL)
+	log.Printf("LLM 리포트 서버: %s", llmServerURL)
+
+	server := api.NewServer(agentStore, eventStore, alertStore, publisher, auth, reportClient)
 
 	errCh := make(chan error, 3)
 

@@ -1,0 +1,301 @@
+#!/usr/bin/env bash
+# kn-ig — KN-IG 통합 설치/운영 CLI.
+#
+# 설치:
+#   sudo ./kn-ig --server                 중앙 서버(Backend+MySQL)
+#   sudo ./kn-ig --llm                    LLM 서버(FastAPI)
+#   sudo ./kn-ig --agent <중앙IP>          Agent (이후 'agent --enroll'로 인증서 발급)
+# 운영(역할 자동 감지):
+#        ./kn-ig                          이 VM 상태 요약
+#        ./kn-ig --status                 〃 (상세 점검)
+#        ./kn-ig --logs [-f]              이 VM 서비스 로그(-f 실시간)
+#        ./kn-ig --verify [--event-test]  동작 검증(PASS/FAIL; 이벤트 흐름까지)
+#   sudo ./kn-ig --uninstall [--purge]    이 VM에서 제거(--purge: 데이터/설정까지)
+#   sudo ./kn-ig --update                 git pull 후 현재 역할 재배포(자동 감지)
+#        ./kn-ig --console                관리자 콘솔(GUI) 안내
+#        ./kn-ig --version
+#
+# 옵션: --ip <IP>(server cert SAN) · --llm-host <HOST>(server) · --certs <DIR>(agent)
+#       --mode lock|maintenance(agent) · --no-service
+# 준비: git clone <repo> && cd KN-IG  (첫 실행 후 어디서나 `kn-ig`).
+
+set -uo pipefail
+
+SELF="${BASH_SOURCE[0]}"
+if command -v readlink >/dev/null 2>&1 && readlink -f "$SELF" >/dev/null 2>&1; then
+    SELF="$(readlink -f "$SELF")"
+fi
+REPO="$(cd "$(dirname "$SELF")" && pwd)"
+DEPLOY="${REPO}/deploy"
+KN_IG_VERSION="1.0.0"
+# shellcheck source=deploy/lib/common.sh
+. "${DEPLOY}/lib/common.sh"
+
+usage() { sed -n '2,20p' "$SELF" | sed 's/^# \{0,1\}//'; }
+box() { printf '\n%s━━ %s%s%s %s━━━━━━━━━━━━━━━━━━━%s\n' "$_C_BLU" "$_C_RST$_C_BLD" "$1" "$_C_RST" "$_C_BLU" "$_C_RST"; }
+ask() { local p="$1" d="${2:-}" v; read -r -p "$(printf '  %s [%s]: ' "$p" "$d")" v; printf '%s' "${v:-$d}"; }
+
+unit_for_role() {
+    case "$1" in
+        central) echo "kn-ig-central.service" ;;
+        llm)     echo "kn-ig-llm.service" ;;
+        agent)   echo "integrityguard.service" ;;
+    esac
+}
+detect_local_role() {
+    [[ -f /etc/systemd/system/kn-ig-central.service ]] && { echo central; return; }
+    [[ -f /etc/systemd/system/kn-ig-llm.service ]]     && { echo llm; return; }
+    [[ -f /etc/systemd/system/integrityguard.service ]] && { echo agent; return; }
+    # 비-systemd(upstart/sysvinit) 폴백 — init.d 스크립트 또는 설치 흔적
+    [[ -f /etc/init.d/integrityguard ]] && { echo agent; return; }
+    [[ -f /etc/ig_monitor/ig.conf && -x /usr/local/bin/agent ]] && { echo agent; return; }
+    echo ""
+}
+# agent가 systemd로 관리되는지 (아니면 init.d/pid 기반)
+agent_uses_systemd() { have systemctl && [[ -f /etc/systemd/system/integrityguard.service ]]; }
+# 역할 서비스 동작 여부 — systemd / init.d(pid) 모두 커버
+svc_running() {
+    local role="$1"
+    if [[ "$role" == agent ]] && ! agent_uses_systemd; then
+        [[ -f /tmp/ig_monitor.pid ]] && kill -0 "$(cat /tmp/ig_monitor.pid 2>/dev/null)" 2>/dev/null
+        return
+    fi
+    svc_active "$(unit_for_role "$role")"
+}
+# env 파일에서 KEY=값 추출
+read_env_val() { [[ -f "$1" ]] || return 1; grep -E "^$2=" "$1" 2>/dev/null | head -1 | cut -d= -f2-; }
+svc_active() { have systemctl && systemctl is-active --quiet "$1"; }
+
+install_self() {
+    local dest=/usr/local/bin/kn-ig
+    [[ "$(readlink "$dest" 2>/dev/null)" == "$REPO/kn-ig" ]] && return 0
+    $SUDO ln -sf "${REPO}/kn-ig" "$dest" 2>/dev/null && \
+        ok "kn-ig 설치됨: ${dest} — 이제 어디서나 'kn-ig' 로 호출하세요." || true
+}
+
+cmd_status() {
+    local role; role="$(detect_local_role)"
+    box "KN-IG 상태"
+    if [[ -z "$role" ]]; then
+        warn "이 VM에 설치된 KN-IG 역할이 없습니다."
+        log "설치: sudo ./kn-ig --server | --llm | --agent <중앙IP>"
+        return 0
+    fi
+    local svc; svc="$(unit_for_role "$role")"
+    [[ "$role" == agent ]] && ! agent_uses_systemd && svc="integrityguard (init.d)"
+    printf '  역할: %s%s%s   서비스: %s\n' "$_C_BLD" "$role" "$_C_RST" "$svc"
+    if svc_running "$role"; then ok "서비스 active"; else warn "서비스 비활성 — kn-ig --logs 로 원인 확인"; fi
+
+    case "$role" in
+        central)
+            local hp tp lurl
+            hp="$(read_env_val "$REPO/Backend/.env" HTTP_ADDR)"; hp="${hp##*:}"; hp="${hp:-8080}"
+            tp="$(read_env_val "$REPO/Backend/.env" TCP_ADDR)";  tp="${tp##*:}"; tp="${tp:-9000}"
+            lurl="$(read_env_val "$REPO/Backend/.env" LLM_SERVER_URL)"; lurl="${lurl:-http://127.0.0.1:8088}"
+            { svc_active mysql || svc_active mariadb || svc_active mysqld; } && ok "MySQL/MariaDB 구동 중" || warn "DB 서비스 비활성"
+            if http_ok "http://127.0.0.1:${hp}/auth/status"; then
+                ok "HTTP API :${hp} 정상 (인증 활성)"
+                log "    에이전트/이벤트는 콘솔 로그인 후 확인 (/api 인증 필요)"
+            else warn "HTTP API :${hp} 미응답"; fi
+            tcp_open 127.0.0.1 "$tp" 3 && ok "Agent collector :${tp} 리슨" || warn "collector :${tp} 미응답"
+            http_ok "${lurl}/health" && ok "LLM 도달: ${lurl}" || warn "LLM 미도달: ${lurl} (리포트 외 기능 정상)"
+            ;;
+        llm)
+            local lp; lp="$(read_env_val "$REPO/LLM/.env" LLM_PORT)"; lp="${lp:-8088}"
+            http_ok "http://127.0.0.1:${lp}/health" && ok "/health :${lp} 정상" || warn "/health :${lp} 미응답"
+            ;;
+        agent)
+            local sh sp
+            sh="$(read_env_val /etc/ig_monitor/ig.env IG_SERVER_HOST)"
+            sp="$(read_env_val /etc/ig_monitor/ig.env IG_SERVER_PORT)"; sp="${sp:-9000}"
+            if [[ -n "$sh" ]]; then
+                tcp_open "$sh" "$sp" 4 && ok "중앙 ${sh}:${sp} 도달 가능" || warn "중앙 ${sh}:${sp} 미도달(Agent는 자동 재연결)"
+            fi
+            [[ -f /etc/ig_monitor/certs/agent.crt ]] && ok "인증서 존재(enrollment 완료)" \
+                || warn "인증서 없음 — 'sudo agent --enroll'로 enrollment 필요"
+            ;;
+    esac
+    log "상세 검증: kn-ig --verify    로그: kn-ig --logs"
+}
+
+cmd_logs() {
+    local role; role="$(detect_local_role)"
+    [[ -n "$role" ]] || { warn "설치된 KN-IG 역할이 없습니다."; return 1; }
+    ig_init_sudo
+    # 비-systemd agent → 로그 파일(tail). systemd → journalctl.
+    if [[ "$role" == agent ]] && ! agent_uses_systemd; then
+        local lf=/var/log/ig_monitor.log
+        [[ -f "$lf" ]] || { warn "로그 파일 없음: $lf (agent 미기동?)"; return 1; }
+        if [[ "$FOLLOW" -eq 1 ]]; then log "$lf 실시간 로그 (Ctrl-C 종료)"; $SUDO tail -f "$lf"
+        else $SUDO tail -n 80 "$lf"; fi
+        return 0
+    fi
+    have systemctl || { warn "systemctl 없음 — 로그 조회 불가"; return 1; }
+    local svc; svc="$(unit_for_role "$role")"
+    if [[ "$FOLLOW" -eq 1 ]]; then
+        log "${svc} 실시간 로그 (Ctrl-C 종료)"
+        $SUDO journalctl -u "$svc" -f --no-pager
+    else
+        $SUDO journalctl -u "$svc" -n 80 --no-pager
+    fi
+}
+
+cmd_uninstall() {
+    ig_init_sudo
+    local role; role="$(detect_local_role)"
+    [[ -n "$role" ]] || { warn "제거할 KN-IG 역할이 없습니다."; return 0; }
+    local svc; svc="$(unit_for_role "$role")"
+    box "KN-IG 제거 — ${role}"
+    local go; go="$(ask "이 VM에서 ${role} 서비스를 제거할까요?$([[ $PURGE -eq 1 ]] && echo ' (--purge: 데이터/설정 포함)') (y/N)" "N")"
+    [[ "$go" =~ ^[Yy] ]] || { log "취소했습니다."; return 0; }
+
+    if [[ "$role" == agent ]] && ! agent_uses_systemd; then
+        [[ -f /etc/init.d/integrityguard ]] && $SUDO /etc/init.d/integrityguard stop 2>/dev/null || true
+        if   have update-rc.d; then $SUDO update-rc.d -f integrityguard remove >/dev/null 2>&1 || true
+        elif have chkconfig;  then $SUDO chkconfig --del integrityguard 2>/dev/null || true; fi
+        $SUDO rm -f /etc/init.d/integrityguard
+        ok "서비스 제거: integrityguard (init.d)"
+    else
+        $SUDO systemctl disable --now "$svc" 2>/dev/null || true
+        $SUDO rm -f "/etc/systemd/system/${svc}"
+        [[ "$role" == "agent" ]] && $SUDO rm -f /etc/systemd/system/integrityguard.service.d/10-mode.conf 2>/dev/null || true
+        $SUDO systemctl daemon-reload 2>/dev/null || true
+        ok "서비스 제거: ${svc}"
+    fi
+
+    if [[ "$PURGE" -eq 1 ]]; then
+        case "$role" in
+            agent)
+                $SUDO rm -rf /etc/ig_monitor /usr/local/bin/agent /etc/modules-load.d/ig_lkm.conf
+                $SUDO rmmod ig_lkm 2>/dev/null || true
+                ok "Agent 설정/바이너리/모듈 제거" ;;
+            central)
+                warn "DB는 보존했습니다. 완전 삭제하려면 수동으로: sudo mysql -e 'DROP DATABASE integrityguard;'"
+                rm -f "$REPO/Backend/.env" 2>/dev/null || true
+                ok "Backend/.env 제거(인증서 Backend/certs/ 는 보존)" ;;
+            llm)
+                rm -f "$REPO/LLM/.env" 2>/dev/null || true
+                ok "LLM/.env 제거(.venv 는 보존)" ;;
+        esac
+    fi
+    log "재설치: sudo ./kn-ig --${role/central/server}"
+}
+
+cmd_version() {
+    local commit=""
+    [[ -d "$REPO/.git" ]] && have git && commit="$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null)"
+    printf 'kn-ig %s%s\n' "$KN_IG_VERSION" "${commit:+ (${commit})}"
+}
+
+# 업데이트: git pull 후 이 VM의 역할을 자동 감지해 재배포(재빌드+재시작)
+cmd_update() {
+    box "KN-IG 업데이트 — git pull + 현재 역할 재배포"
+    { [[ -d "$REPO/.git" ]] && have git; } || die "git 저장소/명령 없음: $REPO" "수동으로 코드 갱신 후 역할 명령을 재실행하세요"
+
+    # repo 소유자 권한으로 pull(루트로 당기면 dubious ownership/소유권 오염). --ff-only로 충돌 시 자동 머지 방지.
+    local owner; owner="$(stat -c '%U' "$REPO" 2>/dev/null || echo root)"
+    log "git pull (${REPO}, as ${owner})..."
+    sudo -u "$owner" git -C "$REPO" pull --ff-only || die "git pull 실패 — 로컬 변경/충돌 가능" "git -C $REPO status 로 확인 후 재시도"
+
+    local role; role="$(detect_local_role)"
+    [[ -n "$role" ]] || die "설치된 역할이 없습니다" "먼저 --server/--llm/--agent 로 설치하세요"
+    ok "역할 감지: ${role} — 재배포 시작(멱등)"
+    ig_init_sudo
+    case "$role" in
+        central) bash "${DEPLOY}/setup-central.sh" || return 1 ;;
+        llm)     bash "${DEPLOY}/setup-llm.sh" || return 1 ;;
+        agent)
+            local host mode
+            host="$(read_env_val /etc/ig_monitor/ig.env IG_SERVER_HOST)"
+            [[ -n "$host" ]] || die "ig.env에서 중앙서버 주소를 찾지 못함" "kn-ig --agent <중앙IP> 로 직접 재실행하세요"
+            # 현재 모드(lock/maintenance) 보존 — systemd 유닛 또는 init.d 스크립트에서 읽음
+            mode="$(systemctl cat integrityguard.service 2>/dev/null | grep -oE -- '-m (lock|maintenance)' | awk '{print $2}' | tail -1)"
+            [[ -n "$mode" ]] || mode="$(grep -oE '^MODE=(lock|maintenance)' /etc/init.d/integrityguard 2>/dev/null | cut -d= -f2 | tail -1)"
+            [[ -n "$mode" ]] || mode=maintenance
+            log "중앙=${host}  mode=${mode}"
+            bash "${DEPLOY}/setup-agent.sh" --backend "$host" --mode "$mode" || return 1 ;;
+    esac
+    install_self
+    echo; ok "업데이트 완료 (${role}).  상태: kn-ig --status"
+}
+
+ROLE=""; AGENT_SERVER=""; AGENT_CERTS=""; AGENT_MODE=""; FOLLOW=0; PURGE=0; EVENT_TEST=0; EXTRA=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --server)  ROLE=server; shift ;;
+        --llm)     ROLE=llm; shift ;;
+        --agent)   ROLE=agent; shift
+                   if [[ $# -gt 0 && "$1" != --* ]]; then AGENT_SERVER="$1"; shift; fi ;;
+        --verify)  ROLE=verify; shift ;;
+        --status)  ROLE=status; shift ;;
+        --logs)    ROLE=logs; shift ;;
+        --uninstall) ROLE=uninstall; shift ;;
+        --update)  ROLE=update; shift ;;
+        --console) ROLE=console; shift ;;
+        --version) ROLE=version; shift ;;
+        -f|--follow) FOLLOW=1; shift ;;
+        --purge)   PURGE=1; shift ;;
+        --event-test) EVENT_TEST=1; shift ;;
+        --ip)        EXTRA+=(--ip "${2:-}"); shift 2 ;;
+        --llm-host)  EXTRA+=(--llm-host "${2:-}"); shift 2 ;;
+        --certs)     AGENT_CERTS="${2:-}"; shift 2 ;;
+        --mode)      AGENT_MODE="${2:-}"; shift 2 ;;
+        --no-service) EXTRA+=(--no-service); shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) die "알 수 없는 인자: $1" "사용법: kn-ig --help" ;;
+    esac
+done
+# 인자 없음 → 역할 감지되면 상태, 아니면 사용법
+[[ -z "$ROLE" ]] && { [[ -n "$(detect_local_role)" ]] && ROLE=status || { usage; exit 1; }; }
+
+case "$ROLE" in
+    server)
+        ig_init_sudo
+        bash "${DEPLOY}/setup-central.sh" "${EXTRA[@]+"${EXTRA[@]}"}" || exit 1
+        install_self
+        echo; ok "중앙 서버 준비 완료."
+        log "  Agent 등록(2단계):"
+        log "    1) 위에 출력된 Enrollment ID / XOR Key 를 복사해 두세요(1회용·24h)."
+        log "    2) 각 Agent VM에서:  sudo ./kn-ig --agent $(ig_primary_ip)"
+        log "       → 설치 후 'sudo agent --enroll' 프롬프트에 그 ID/Key 입력 → 인증서 자동 발급."
+        log "  토큰 추가 발급: (cd ${REPO}/Backend && ./bin/enroll-token -allow-unbound -ttl-hours 24)"
+        log "  상태/검증:     kn-ig --status   kn-ig --verify"
+        ;;
+    llm)
+        ig_init_sudo
+        bash "${DEPLOY}/setup-llm.sh" "${EXTRA[@]+"${EXTRA[@]}"}" || exit 1
+        install_self
+        echo; ok "LLM 서버 준비 완료.  상태: kn-ig --status"
+        ;;
+    agent)
+        [[ -n "$AGENT_SERVER" ]] || die "중앙 서버 주소 필요" "e.g. sudo ./kn-ig --agent 192.168.64.10"
+        ig_init_sudo
+        args=(--backend "$AGENT_SERVER")
+        [[ -n "$AGENT_CERTS" ]] && args+=(--certs-dir "$AGENT_CERTS")
+        [[ -n "$AGENT_MODE" ]]  && args+=(--mode "$AGENT_MODE")
+        bash "${DEPLOY}/setup-agent.sh" "${args[@]}" "${EXTRA[@]+"${EXTRA[@]}"}" || exit 1
+        install_self
+        echo; ok "Agent 준비 완료 (중앙=${AGENT_SERVER})."
+        if [[ ! -f /etc/ig_monitor/certs/agent.crt ]]; then
+            log "  남은 단계 — enrollment(인증서 발급):"
+            log "    sudo IG_ENROLL_HOST=${AGENT_SERVER} agent --enroll"
+            log "      → 중앙서버(kn-ig --server) 출력의 Enrollment ID / XOR Key 입력"
+            log "    발급 후:  sudo systemctl start integrityguard   (비-systemd: /etc/init.d/integrityguard start)"
+        fi
+        log "  상태: kn-ig --status"
+        ;;
+    verify)    [[ "$EVENT_TEST" -eq 1 ]] && exec bash "${DEPLOY}/verify.sh" --event-test || exec bash "${DEPLOY}/verify.sh" ;;
+    status)    cmd_status ;;
+    logs)      cmd_logs ;;
+    uninstall) cmd_uninstall ;;
+    version)   cmd_version ;;
+    update)    cmd_update ;;
+    console)
+        box "관리자 콘솔 (GUI)"
+        echo
+        log "관리자 콘솔은 GUI 앱으로, 이 CLI 설치 대상이 아닙니다."
+        log "  - macOS:   KN-IG-Console.dmg"
+        log "  - Windows: KN-IG-Console.exe"
+        log "콘솔은 중앙 서버 HTTP(:8080)로 접속합니다(REST/SSE). 빌드/배포는 Frontend/ 참고."
+        ;;
+esac
