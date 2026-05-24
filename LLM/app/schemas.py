@@ -184,3 +184,5 @@ class ReportData(BaseModel):
     incidents: List[Incident]
     recs: List[Rec]
     mitreGlossary: List[Tuple[str, str, str]]
+    # 스트리밍 모드의 LLM '종합 분석' 내러티브(마크다운). 비스트림 경로에서는 미생성(None).
+    executiveSummary: Optional[str] = None
