@@ -29,6 +29,10 @@ cluster.env
 *.log
 logs/
 
+# Local runtime artifacts
+tmp/
+certs/
+
 # Claude
 .claude/
 .omc/

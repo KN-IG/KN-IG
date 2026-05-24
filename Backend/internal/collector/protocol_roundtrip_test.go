@@ -95,6 +95,24 @@ func TestWireFileEventRoundTrip(t *testing.T) {
 	binary.BigEndian.PutUint32(ts[:], 1700000000)
 	p.Write(ts[:])
 
+	// v2 확장: target_dev/ino, blocked, uid, sid, comm, process chain(depth=0)
+	var tdev [8]byte
+	binary.BigEndian.PutUint64(tdev[:], 100)
+	p.Write(tdev[:])
+	var tino [8]byte
+	binary.BigEndian.PutUint64(tino[:], 200)
+	p.Write(tino[:])
+	p.WriteByte(1) // blocked
+	var uid [4]byte
+	binary.BigEndian.PutUint32(uid[:], 1000)
+	p.Write(uid[:])
+	var sid [4]byte
+	binary.BigEndian.PutUint32(sid[:], 1200)
+	p.Write(sid[:])
+	knigPutStr(&p, "chmod") // comm
+	p.WriteByte(0)          // chain depth
+	p.WriteByte(0)          // chain truncated
+
 	ev, err := DecodeFileEvent(p.Bytes())
 	if err != nil {
 		t.Fatalf("DecodeFileEvent: %v", err)
@@ -110,6 +128,12 @@ func TestWireFileEventRoundTrip(t *testing.T) {
 	}
 	if ev.Pid != 4242 || ev.DetectedBy != MonEbpf {
 		t.Errorf("pid=%d by=%#x", ev.Pid, ev.DetectedBy)
+	}
+	if ev.TargetDev != 100 || ev.TargetIno != 200 || !ev.Blocked {
+		t.Errorf("target_dev=%d target_ino=%d blocked=%v", ev.TargetDev, ev.TargetIno, ev.Blocked)
+	}
+	if ev.UID != 1000 || ev.SID != 1200 || ev.Comm != "chmod" {
+		t.Errorf("uid=%d sid=%d comm=%q", ev.UID, ev.SID, ev.Comm)
 	}
 }
 
