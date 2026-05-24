@@ -10,7 +10,7 @@
 //
 // 섹션: 01 KEY FINDINGS · 02 OVERVIEW(KPI) · 03 TREND · 04 SEVERITY&TARGETS
 //       · 05 MITRE ATT&CK · 06 INCIDENTS · 07 ACTIONS · 08 REFERENCES
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import "./reportV2.css";
 import { MOCK_REPORT, type ReportSummary } from "@/report/reportMockData";
 import { apiFetch } from "@/api/client";
@@ -117,6 +117,19 @@ async function loadReportSummary(range: RangeMode, fromStr: string, toStr: strin
   return d && Array.isArray(d.days) ? (d as ReportSummary) : null;
 }
 
+// 내러티브 마크다운 간이 렌더 — '## 소제목'은 h4, 나머지는 문단. (외부 의존 없이 내장)
+function renderNarrative(md: string): ReactNode[] {
+  const out: ReactNode[] = [];
+  md.split("\n").forEach((line, i) => {
+    const t = line.trim();
+    if (!t) return;
+    if (t.startsWith("## ")) out.push(<h4 key={i} className="ai-h">{t.slice(3)}</h4>);
+    else if (t.startsWith("# ")) out.push(<h4 key={i} className="ai-h">{t.slice(2)}</h4>);
+    else out.push(<p key={i} className="ai-p">{t}</p>);
+  });
+  return out;
+}
+
 type Phase = "idle" | "loading" | "reveal" | "done";
 
 export function ReportV2() {
@@ -128,6 +141,9 @@ export function ReportV2() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [revealed, setRevealed] = useState(0);
   const [liveError, setLiveError] = useState<string | null>(null);
+  const [narrative, setNarrative] = useState(""); // 스트리밍 '종합 분석' 누적 텍스트
+  const abortRef = useRef<AbortController | null>(null);
+  const simRef = useRef<number | null>(null);
 
   const d = useMemo(
     () => (config.useMock ? deriveReport(base, range, from, to) : base),
@@ -135,31 +151,132 @@ export function ReportV2() {
   );
   const s = summarize(d);
 
-  // 보고서 생성 — 실서버면 먼저 요청 후 연출, mock이면 즉시 연출.
+  // 진행 중 스트림/시뮬 정리.
+  function stopStreaming() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    if (simRef.current !== null) {
+      window.clearTimeout(simRef.current);
+      simRef.current = null;
+    }
+  }
+
+  // SSE 프레임(event:/data:) 1개 처리.
+  function handleFrame(frame: string) {
+    let event = "message";
+    let data = "";
+    for (const line of frame.split("\n")) {
+      if (line.startsWith("event:")) event = line.slice(6).trim();
+      else if (line.startsWith("data:")) data += line.slice(5).replace(/^ /, "");
+    }
+    if (!data) return;
+    let payload: unknown;
+    try {
+      payload = JSON.parse(data);
+    } catch {
+      return;
+    }
+    if (event === "skeleton" || event === "patch") {
+      const p = payload as Partial<ReportSummary>;
+      if (Array.isArray(p.days)) setBase(p as ReportSummary);
+    } else if (event === "token") {
+      const t = (payload as { t?: string }).t ?? "";
+      if (t) setNarrative((prev) => prev + t);
+    }
+  }
+
+  // 실서버 SSE 소비 — skeleton/token/patch/done을 순차 처리.
+  async function consumeStream() {
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    const { from: f, to: t } = rangeToDates(range, from, to);
+    const url = `/api/reports/summary/stream?from=${encodeURIComponent(f)}&to=${encodeURIComponent(t)}`;
+    try {
+      const res = await apiFetch(url, {
+        method: "POST",
+        headers: { Accept: "text/event-stream" },
+        signal: ctrl.signal,
+      });
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("스트림 본문 없음");
+      const decoder = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let idx: number;
+        while ((idx = buf.indexOf("\n\n")) >= 0) {
+          handleFrame(buf.slice(0, idx));
+          buf = buf.slice(idx + 2);
+        }
+      }
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") {
+        const msg = e instanceof Error ? e.message : "스트림 실패";
+        console.error("리포트 스트림 실패:", e);
+        setLiveError(msg);
+      }
+    } finally {
+      abortRef.current = null;
+    }
+  }
+
+  // mock 모드 stream 시뮬레이션 — narrative를 타이핑하듯 점진 표시.
+  function simulateNarrative(text: string) {
+    let i = 0;
+    const step = () => {
+      i += 3;
+      setNarrative(text.slice(0, i));
+      if (i < text.length) simRef.current = window.setTimeout(step, 24);
+      else simRef.current = null;
+    };
+    step();
+  }
+
+  // 보고서 생성 — renderMode에 따라 연출/스트리밍 분기.
   async function handleGenerate() {
+    stopStreaming();
     setLiveError(null);
     setRevealed(0);
-    if (config.useMock) {
+    setNarrative("");
+
+    if (renderMode === "anim") {
+      // 연출: 데이터 확보 후 섹션 순차 등장
+      if (!config.useMock) {
+        setPhase("loading");
+        try {
+          const r = await loadReportSummary(range, from, to);
+          if (r) setBase(r);
+          else setLiveError("응답 형식 불일치(days 없음)");
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : "요청 실패";
+          console.error("리포트 서버 응답 실패 — 임시 데이터로 표시:", e);
+          setLiveError(msg); // 예: "503 Service Unavailable"(LLM 미가동)
+        }
+      }
       setPhase("reveal");
       return;
     }
-    setPhase("loading");
-    try {
-      const r = await loadReportSummary(range, from, to);
-      if (r) setBase(r);
-      else setLiveError("응답 형식 불일치(days 없음)");
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "요청 실패";
-      console.error("리포트 서버 응답 실패 — 임시 데이터로 표시:", e);
-      setLiveError(msg); // 예: "503 Service Unavailable"(LLM 미가동)
-    }
+
+    // 스트리밍: 구조 즉시 + 내러티브 실시간
     setPhase("reveal");
+    if (config.useMock) {
+      simulateNarrative(MOCK_REPORT.executiveSummary ?? "");
+    } else {
+      void consumeStream();
+    }
   }
 
   function reset() {
+    stopStreaming();
     setPhase("idle");
     setRevealed(0);
+    setNarrative("");
   }
+
+  // 언마운트 시 진행 중 스트림 정리.
+  useEffect(() => stopStreaming, []);
 
   // 섹션 순차 등장 — renderMode에 따라 속도 차등(stream은 더 촘촘).
   // (2단계에서 stream은 LLM SSE 점진 렌더로 교체 예정.)
@@ -283,6 +400,18 @@ export function ReportV2() {
             PDF 저장
           </button>
         </div>
+
+        {/* AI 종합 분석 — 스트리밍 모드에서 LLM 내러티브가 실시간 누적된다. */}
+        {narrative && (
+          <section className="ai-summary in">
+            <div className="sec-head">
+              <div className="eyebrow">AI 종합 분석</div>
+              <h2>LLM 종합 분석{phase === "reveal" && <span className="ai-cursor" />}</h2>
+              <p>LLM이 수집·집계 데이터를 해석해 작성한 종합 분석입니다.</p>
+            </div>
+            <div className="card ai-card">{renderNarrative(narrative)}</div>
+          </section>
+        )}
 
         <div className={rv(0)}><KeyFindings findings={d.findings} /></div>
         <div className={rv(1)}><Kpis data={d} /></div>

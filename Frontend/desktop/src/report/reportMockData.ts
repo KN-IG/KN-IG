@@ -88,6 +88,8 @@ export interface ReportSummary {
   incidents: Incident[];
   recs: ReportRec[];
   mitreGlossary: [string, string, string][];
+  // 스트리밍 모드의 LLM '종합 분석' 내러티브(마크다운). 비스트림에서는 미생성.
+  executiveSummary?: string;
 }
 
 export const MOCK_REPORT: ReportSummary = {
@@ -231,4 +233,12 @@ export const MOCK_REPORT: ReportSummary = {
     ["T1053.003", "예약 작업 (cron)", "cron에 작업을 심어 주기적 실행과 지속성을 확보합니다."],
     ["T1070.002", "로그 삭제", "시스템·감사 로그를 삭제해 공격 흔적을 제거하고 탐지를 회피합니다."],
   ],
+  executiveSummary: [
+    "## 종합 판단",
+    "이번 기간 KN-IG는 핵심 자산에 대한 변조 시도를 다수 탐지·차단했습니다. 특히 자격증명·권한 설정 파일에 대한 접근이 집중되어, 단순 오류가 아닌 의도적 공격 흐름으로 판단됩니다.",
+    "## 공격 흐름 (MITRE ATT&CK)",
+    "관측된 기법은 자격증명 접근(T1003)에서 시작해 권한 상승(T1548)과 지속성 확보(T1053·T1543)로 이어지는 전형적 침투 단계를 보입니다. 동일 시각 다중 호스트에서 유사 패턴이 나타나 조직적 캠페인 가능성이 높습니다.",
+    "## 우선 조치",
+    "권한 상승이 탐지된 호스트를 우선 격리하고, sudo 정책과 인증 모듈 변경 이력을 점검하시기 바랍니다. 차단되지 않은(확인 필요) 이벤트는 수동 검토 후 정책을 lock 모드로 전환하는 것을 권고합니다.",
+  ].join("\n"),
 };

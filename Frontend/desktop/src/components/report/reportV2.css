@@ -97,6 +97,14 @@ html { scroll-behavior:smooth; }
 @keyframes gen-spin { to { transform:rotate(360deg); } }
 .report-v2 .gen-err { font-size:12.5px; color:var(--high); }
 
+/* AI 종합 분석 (스트리밍 내러티브) */
+.report-v2 .ai-card { line-height:1.7; }
+.report-v2 .ai-h { font-size:15px; font-weight:700; color:var(--ink); margin:16px 0 6px; letter-spacing:-.01em; }
+.report-v2 .ai-card .ai-h:first-child { margin-top:0; }
+.report-v2 .ai-p { font-size:14.5px; color:var(--ink-soft); margin:0 0 8px; }
+.report-v2 .ai-cursor { display:inline-block; width:7px; height:1.05em; margin-left:5px; vertical-align:-2px; background:var(--blue); border-radius:1px; animation:ai-blink 1s steps(2) infinite; }
+@keyframes ai-blink { 0%,50%{opacity:1} 50.01%,100%{opacity:0} }
+
 /* ===== SECTIONS ===== */
 .report-v2 section { margin-top:60px; }
 .sec-head { margin-bottom:20px; }
