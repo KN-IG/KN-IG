@@ -74,6 +74,7 @@ func (s *Server) registerRoutes() {
 
 	// Report API (LLM 서버 프록시)
 	api.POST("/reports/summary", s.handleGenerateSummaryReport)
+	api.POST("/reports/summary/stream", s.handleGenerateSummaryReportStream)
 }
 
 // corsMiddleware : Tauri 콘솔(별 origin)이 직접 호출 가능하도록 허용.
