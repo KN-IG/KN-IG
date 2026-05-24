@@ -4,7 +4,7 @@
 //   글래스 톤: .glass-topbar 유틸(색 채널 HSL 단일출처 + 알파/blur 합성).
 //   탭은 react-router NavLink로 활성 표시(Apple 톤 알약). 실제 라우트는 P4~P6에서 채움.
 
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { LogOut, Moon, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,12 @@ interface NavbarProps {
 export function Navbar({ onLogout }: NavbarProps) {
   const { theme, toggle } = useTheme();
   const { connected } = useConnection();
+  const { pathname } = useLocation();
+
+  // Report 화면에서만 "무결성 보안 리포트", 그 외(Dashboard/Policy/Logs)는 "무결성 보호 시스템".
+  const subtitle = pathname.startsWith("/app/report")
+    ? "무결성 보안 리포트"
+    : "무결성 보호 시스템";
 
   return (
     <header className="glass-topbar sticky top-0 z-30 border-b border-transparent">
@@ -41,7 +47,7 @@ export function Navbar({ onLogout }: NavbarProps) {
               KN-IG
             </span>
             <span className="text-[11px] font-normal text-muted-foreground">
-              무결성 보안 리포트
+              {subtitle}
             </span>
           </span>
         </div>
