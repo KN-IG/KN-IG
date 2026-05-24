@@ -6,8 +6,9 @@
 #   3.10 ~ 5.7  → LKM       (Agent/scripts/setup_lkm_env.sh, ig_lkm.ko 빌드+상시로드)
 #   그 외       → inotify   (AUDIT 폴백)
 #
-# agent_id = hash(hostname+IP) 라 Agent 2대는 IP만 다르면 자동으로 다른 ID로 등록된다.
-# 인증서(ca/agent)는 중앙서버에서 받은 것을 Agent/certs/ 에 두면 2대가 공용한다.
+# 인증서는 XOR enrollment(agent --enroll)로 발급받는다 — 정적 인증서 사전배치 불필요.
+# 이 스크립트는 빌드/서비스 등록까지 준비하고, 마지막에 enrollment 절차를 안내한다.
+# (Enrollment ID/XOR Key는 중앙서버 'kn-ig --server' 설치 시 출력되며, agent --enroll에서 직접 입력)
 #
 # 사용:
 #   sudo ./deploy/setup-agent.sh [--backend HOST] [--port N] [--mode lock|maintenance]
@@ -47,7 +48,9 @@ SCRIPTS="${AGENT_DIR}/scripts"
 BACKEND_HOST="${BACKEND_OVERRIDE:-${IG_CENTRAL_HOST:-}}"
 [[ -n "$BACKEND_HOST" ]] || die "중앙서버 호스트 미지정" "cluster.env의 IG_CENTRAL_HOST를 채우거나 --backend HOST 지정"
 BACKEND_PORT="${PORT_OVERRIDE:-${IG_TCP_PORT:-9000}}"
-CERT_SRC="${CERTS_DIR_OVERRIDE:-${AGENT_DIR}/certs}"
+ENROLL_PORT=9443
+# XOR enrollment 도입으로 정적 인증서 사전배치(--certs-dir)는 더 이상 쓰지 않는다(호환을 위해 옵션만 수용).
+[[ -n "$CERTS_DIR_OVERRIDE" ]] && warn "--certs-dir 는 enrollment 방식에서 무시됩니다(인증서는 agent --enroll이 발급)."
 
 [[ -d "$AGENT_DIR" ]] || die "Agent 디렉토리 없음: $AGENT_DIR" "저장소 루트에서 실행하세요."
 [[ -f "${AGENT_DIR}/CMakeLists.txt" ]] || die "Agent/CMakeLists.txt 없음"
@@ -55,21 +58,38 @@ CERT_SRC="${CERTS_DIR_OVERRIDE:-${AGENT_DIR}/certs}"
 BACKEND="${FORCE_BACKEND:-$(ig_agent_backend)}"
 log "백엔드 선택: ${BACKEND} (커널 $(uname -r)) → 중앙서버 ${BACKEND_HOST}:${BACKEND_PORT}, mode=${MODE}"
 
-step "1/6 mTLS 인증서 확인 (${CERT_SRC})"
-missing=0
-for f in ca.crt agent.crt agent.key; do
-    [[ -f "${CERT_SRC}/${f}" ]] || { warn "없음: ${CERT_SRC}/${f}"; missing=1; }
-done
-if [[ "$missing" -eq 1 ]]; then
-    die "Agent 인증서 없음 — 물리적으로 삽입 필요" \
-        "중앙 'kn-ig --server'가 만든 Backend/certs/{ca,agent}.{crt,key} 를 이 VM의 ${CERT_SRC}/ 에 둔 뒤 재실행." \
-        "다른 경로면: kn-ig --agent <서버IP> --certs <디렉토리>"
+step "1/6 enrollment 준비 (기존 서비스 중지 + 정적 인증서 정리)"
+# XOR enrollment 방식: 인증서는 'agent --enroll'이 SPIFFE identity와 함께 발급한다.
+# 정적(static) 인증서가 남아 있으면 ig_enroll_needed()가 false가 되어 enroll이 거부되고,
+# 그 인증서엔 SPIFFE identity가 없어 백엔드 REGISTER도 거부된다 → 반드시 제거.
+# 반대로 enrollment로 발급된 인증서(SPIFFE URI 보유)는 정상이므로 보존한다(update 멱등).
+AGENT_CRT=/etc/ig_monitor/certs/agent.crt
+
+# SPIFFE URI SAN 보유 여부 — setup-central.sh의 cert_san_covers와 동일한 -ext/-text 폴백 패턴.
+cert_has_spiffe() {
+    local crt="$1"
+    [[ -f "$crt" ]] || return 1
+    openssl x509 -in "$crt" -noout -ext subjectAltName 2>/dev/null | grep -q 'URI:spiffe://' && return 0
+    openssl x509 -in "$crt" -noout -text 2>/dev/null | grep -q 'URI:spiffe://'
+}
+
+# 서비스 중지: lock 모드 보호 해제 목적 — enrolled agent여도 5/6에서 다시 기동되므로 안전.
+if have systemctl && [[ -f /etc/systemd/system/integrityguard.service ]]; then
+    $SUDO systemctl stop integrityguard.service 2>/dev/null || true
+    ok "integrityguard.service 중지(lock 보호 해제)"
+elif [[ -f /etc/init.d/integrityguard ]]; then
+    $SUDO /etc/init.d/integrityguard stop 2>/dev/null || true
+    ok "integrityguard(init.d) 중지"
 fi
-if openssl verify -CAfile "${CERT_SRC}/ca.crt" "${CERT_SRC}/agent.crt" >/dev/null 2>&1; then
-    ok "인증서 체인 검증 통과"
+
+$SUDO mkdir -p /etc/ig_monitor/certs
+if cert_has_spiffe "$AGENT_CRT"; then
+    ok "기존 enrollment 인증서 보존(SPIFFE identity 확인) — 재발급 불필요"
+elif [[ -f "$AGENT_CRT" ]] || [[ -f /etc/ig_monitor/certs/agent.key ]]; then
+    $SUDO rm -f /etc/ig_monitor/certs/ca.crt "$AGENT_CRT" /etc/ig_monitor/certs/agent.key 2>/dev/null || true
+    ok "정적 인증서(SPIFFE 미보유) 정리 — enrollment로 새 인증서 발급 예정"
 else
-    die "agent.crt 가 ca.crt로 검증되지 않음(불일치)" \
-        "중앙서버의 최신 ca.crt/agent.crt 를 다시 받아오세요(중앙서버 IP 변경 시 재발급되었을 수 있음)."
+    log "기존 인증서 없음 — 깨끗한 상태에서 enrollment 진행"
 fi
 
 CMAKE="cmake"
@@ -198,12 +218,18 @@ UNIT_SRC="${AGENT_DIR}/integrityguard.service"
 [[ -f "$CONF_SRC" ]] || die "ig.conf 없음: $CONF_SRC"
 [[ -f "$UNIT_SRC" ]] || die "integrityguard.service 없음: $UNIT_SRC"
 
+# certs 디렉토리만 준비(enrollment가 ca.crt/agent.crt/agent.key를 여기에 발급).
+# 정적 인증서는 복사하지 않는다(XOR enrollment 방식).
 $SUDO mkdir -p /etc/ig_monitor/certs
-$SUDO install -m 0644 "${CERT_SRC}/ca.crt"    /etc/ig_monitor/certs/ca.crt
-$SUDO install -m 0644 "${CERT_SRC}/agent.crt" /etc/ig_monitor/certs/agent.crt
-$SUDO install -m 0600 "${CERT_SRC}/agent.key" /etc/ig_monitor/certs/agent.key
 $SUDO chown -R root:root /etc/ig_monitor
 
+# monitor_type: 백엔드 선택(ebpf/lkm/inotify)을 enrollment metadata로 전달.
+# agent의 parse_enroll_monitor_type은 ebpf/fanotify/lkm을 인식(inotify는 lkm 기본 폴백).
+case "$BACKEND" in
+    ebpf)    ENROLL_MON=ebpf ;;
+    lkm)     ENROLL_MON=lkm ;;
+    *)       ENROLL_MON=fanotify ;;
+esac
 ig_install_stdin /etc/ig_monitor/ig.env 0640 root:root <<EOF
 # KN-IG Agent transport — deploy/setup-agent.sh 생성 ($(date -u +%FT%TZ))
 IG_SERVER_HOST=${BACKEND_HOST}
@@ -211,6 +237,10 @@ IG_SERVER_PORT=${BACKEND_PORT}
 IG_CA_CRT=/etc/ig_monitor/certs/ca.crt
 IG_AGENT_CRT=/etc/ig_monitor/certs/agent.crt
 IG_AGENT_KEY=/etc/ig_monitor/certs/agent.key
+# XOR enrollment (신규 등록 — Enrollment ID/XOR Key는 'agent --enroll'에서 직접 입력)
+IG_ENROLL_HOST=${BACKEND_HOST}
+IG_ENROLL_PORT=${ENROLL_PORT}
+IG_ENROLL_MONITOR_TYPE=${ENROLL_MON}
 EOF
 $SUDO install -m 0640 "$CONF_SRC" /etc/ig_monitor/ig.conf
 $SUDO install -m 0755 "$BIN" /usr/local/bin/agent
@@ -232,11 +262,17 @@ EOF
     fi
     $SUDO systemctl daemon-reload
     $SUDO systemctl reset-failed integrityguard.service 2>/dev/null || true
-    mark "agent 기동 실패 — journalctl -u integrityguard.service (TLS/인증서/eBPF·LKM 활성 확인)"
-    $SUDO systemctl enable --now integrityguard.service
-    $SUDO systemctl restart integrityguard.service
-    sleep 2
-    ok "서비스 상태: $($SUDO systemctl is-active integrityguard.service 2>/dev/null || echo unknown) (mode=${MODE})"
+    # enrollment 전(인증서 없음)에 start하면 REGISTER 실패만 반복한다 → enable만 하고 start는 보류.
+    # enrollment 후(agent.crt 존재) 재실행이면 정상 기동.
+    $SUDO systemctl enable integrityguard.service 2>/dev/null || true
+    if [[ -f /etc/ig_monitor/certs/agent.crt ]]; then
+        mark "agent 기동 실패 — journalctl -u integrityguard.service (TLS/인증서/eBPF·LKM 활성 확인)"
+        $SUDO systemctl restart integrityguard.service
+        sleep 2
+        ok "서비스 상태: $($SUDO systemctl is-active integrityguard.service 2>/dev/null || echo unknown) (mode=${MODE})"
+    else
+        ok "서비스 enable 완료 — enrollment 전이라 start는 보류(인증서 발급 후 자동/수동 start)"
+    fi
 elif [[ "$WITH_SERVICE" -eq 1 ]]; then
     # systemd 미사용(upstart/sysvinit, 예: Ubuntu 14.04) — SysV init.d로 설치/기동.
     # 에이전트는 -f 없으면 자체 데몬화하며 /tmp/ig_monitor.pid 를 기록한다.
@@ -266,12 +302,17 @@ esac
 EOF
     if   have update-rc.d; then $SUDO update-rc.d integrityguard defaults >/dev/null 2>&1 || true
     elif have chkconfig;  then $SUDO chkconfig --add integrityguard 2>/dev/null || true; fi
-    $SUDO /etc/init.d/integrityguard restart 2>/dev/null || $SUDO /etc/init.d/integrityguard start || true
-    sleep 2
-    if /etc/init.d/integrityguard status >/dev/null 2>&1; then
-        ok "integrityguard 실행 중 (init.d, mode=${MODE})"
+    # enrollment 전(인증서 없음)에는 기동 보류 — REGISTER 실패 반복 방지.
+    if [[ -f /etc/ig_monitor/certs/agent.crt ]]; then
+        $SUDO /etc/init.d/integrityguard restart 2>/dev/null || $SUDO /etc/init.d/integrityguard start || true
+        sleep 2
+        if /etc/init.d/integrityguard status >/dev/null 2>&1; then
+            ok "integrityguard 실행 중 (init.d, mode=${MODE})"
+        else
+            warn "integrityguard 미기동 — 로그 확인: tail /var/log/ig_monitor.log"
+        fi
     else
-        warn "integrityguard 미기동 — 로그 확인: tail /var/log/ig_monitor.log"
+        ok "init.d 등록 완료 — enrollment 전이라 start 보류(인증서 발급 후 start)"
     fi
 else
     step "5/6 서비스 설치 생략(--no-service) — 수동 실행 안내"
@@ -285,7 +326,14 @@ else
     warn "중앙서버 ${BACKEND_HOST}:${BACKEND_PORT} 미도달 — 중앙 기동/방화벽 확인."
     hint "Agent는 백그라운드 재연결(backoff)을 내장하므로, 중앙서버가 올라오면 자동 등록됩니다."
 fi
-if [[ "$WITH_SERVICE" -eq 1 ]] && have systemctl; then
+# enrollment 서버(:9443) 도달 확인 — 인증서 발급 단계에서 필요.
+if tcp_open "$BACKEND_HOST" "$ENROLL_PORT" 5; then
+    ok "enrollment 서버 ${BACKEND_HOST}:${ENROLL_PORT} 도달 가능(TCP)"
+else
+    warn "enrollment ${BACKEND_HOST}:${ENROLL_PORT} 미도달 — 중앙서버 ENROLL_ADDR/방화벽 확인(인증서 발급에 필요)."
+fi
+# enrollment 완료(인증서 존재) 시에만 서비스 active를 기대한다.
+if [[ -f /etc/ig_monitor/certs/agent.crt ]] && [[ "$WITH_SERVICE" -eq 1 ]] && have systemctl; then
     if $SUDO systemctl is-active --quiet integrityguard.service; then
         ok "integrityguard.service active"
     else
@@ -294,11 +342,26 @@ if [[ "$WITH_SERVICE" -eq 1 ]] && have systemctl; then
 fi
 
 echo
+NEED_ENROLL=0
+[[ ! -f /etc/ig_monitor/certs/agent.crt ]] && NEED_ENROLL=1
 ok "Agent 셋업 완료 (${BACKEND}, mode=${MODE})"
-log "  중앙서버 : ${BACKEND_HOST}:${BACKEND_PORT}"
-log "  agent_id : hostname+IP 해시로 중앙서버가 자동 부여 (2대 IP만 다르면 자동 구분)"
+log "  중앙서버 : ${BACKEND_HOST}:${BACKEND_PORT}   enrollment: ${BACKEND_HOST}:${ENROLL_PORT}"
+log "  agent_id : enrollment 시 중앙서버가 SPIFFE identity와 함께 자동 부여"
 log "  로그     : sudo journalctl -u integrityguard.service -f"
 log "  등록 확인: 중앙서버에서  curl -s http://127.0.0.1:${IG_HTTP_PORT:-8080}/api/agents | jq ."
 log "  전체 점검: deploy/verify.sh"
 [[ "$MODE" == "maintenance" ]] && \
     log "  ※ maintenance(감사) 모드 — 모든 백엔드(eBPF/LKM) 공통 적용. 차단 없이 이벤트만 전송. 차단: --mode lock 로 재실행"
+if [[ "$NEED_ENROLL" -eq 1 ]]; then
+    echo
+    printf '%s━━ 다음 단계: enrollment를 완료하세요 ━━━━━━━━━━━━━━━%s\n' "$_C_YLW" "$_C_RST"
+    log "  1) 중앙서버 설치(kn-ig --server) 출력의 Enrollment ID / XOR Key를 준비"
+    log "  2) sudo IG_ENROLL_HOST=${BACKEND_HOST} IG_ENROLL_PORT=${ENROLL_PORT} agent --enroll"
+    log "       → 프롬프트에 Enrollment ID와 XOR Key를 입력(인증서 자동 발급)"
+    if have systemctl; then
+        log "  3) sudo systemctl start integrityguard      # 발급 후 기동"
+    else
+        log "  3) sudo /etc/init.d/integrityguard start     # 발급 후 기동"
+    fi
+    printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$_C_YLW" "$_C_RST"
+fi

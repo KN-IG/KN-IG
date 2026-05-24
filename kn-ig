@@ -4,7 +4,7 @@
 # 설치:
 #   sudo ./kn-ig --server                 중앙 서버(Backend+MySQL)
 #   sudo ./kn-ig --llm                    LLM 서버(FastAPI)
-#   sudo ./kn-ig --agent <중앙IP>          Agent (인증서는 물리적으로 미리 삽입)
+#   sudo ./kn-ig --agent <중앙IP>          Agent (이후 'agent --enroll'로 인증서 발급)
 # 운영(역할 자동 감지):
 #        ./kn-ig                          이 VM 상태 요약
 #        ./kn-ig --status                 〃 (상세 점검)
@@ -111,7 +111,8 @@ cmd_status() {
             if [[ -n "$sh" ]]; then
                 tcp_open "$sh" "$sp" 4 && ok "중앙 ${sh}:${sp} 도달 가능" || warn "중앙 ${sh}:${sp} 미도달(Agent는 자동 재연결)"
             fi
-            [[ -f /etc/ig_monitor/certs/agent.crt ]] && ok "인증서 존재" || warn "인증서 없음 — 물리 삽입 필요"
+            [[ -f /etc/ig_monitor/certs/agent.crt ]] && ok "인증서 존재(enrollment 완료)" \
+                || warn "인증서 없음 — 'sudo agent --enroll'로 enrollment 필요"
             ;;
     esac
     log "상세 검증: kn-ig --verify    로그: kn-ig --logs"
@@ -253,7 +254,11 @@ case "$ROLE" in
         bash "${DEPLOY}/setup-central.sh" "${EXTRA[@]+"${EXTRA[@]}"}" || exit 1
         install_self
         echo; ok "중앙 서버 준비 완료."
-        log "  Agent VM에서:  kn-ig --agent $(ig_primary_ip)   (ca/agent 인증서를 물리적으로 먼저 삽입)"
+        log "  Agent 등록(2단계):"
+        log "    1) 위에 출력된 Enrollment ID / XOR Key 를 복사해 두세요(1회용·24h)."
+        log "    2) 각 Agent VM에서:  sudo ./kn-ig --agent $(ig_primary_ip)"
+        log "       → 설치 후 'sudo agent --enroll' 프롬프트에 그 ID/Key 입력 → 인증서 자동 발급."
+        log "  토큰 추가 발급: (cd ${REPO}/Backend && ./bin/enroll-token -allow-unbound -ttl-hours 24)"
         log "  상태/검증:     kn-ig --status   kn-ig --verify"
         ;;
     llm)
@@ -270,7 +275,14 @@ case "$ROLE" in
         [[ -n "$AGENT_MODE" ]]  && args+=(--mode "$AGENT_MODE")
         bash "${DEPLOY}/setup-agent.sh" "${args[@]}" "${EXTRA[@]+"${EXTRA[@]}"}" || exit 1
         install_self
-        echo; ok "Agent 준비 완료 (중앙=${AGENT_SERVER}).  상태: kn-ig --status"
+        echo; ok "Agent 준비 완료 (중앙=${AGENT_SERVER})."
+        if [[ ! -f /etc/ig_monitor/certs/agent.crt ]]; then
+            log "  남은 단계 — enrollment(인증서 발급):"
+            log "    sudo IG_ENROLL_HOST=${AGENT_SERVER} agent --enroll"
+            log "      → 중앙서버(kn-ig --server) 출력의 Enrollment ID / XOR Key 입력"
+            log "    발급 후:  sudo systemctl start integrityguard   (비-systemd: /etc/init.d/integrityguard start)"
+        fi
+        log "  상태: kn-ig --status"
         ;;
     verify)    [[ "$EVENT_TEST" -eq 1 ]] && exec bash "${DEPLOY}/verify.sh" --event-test || exec bash "${DEPLOY}/verify.sh" ;;
     status)    cmd_status ;;

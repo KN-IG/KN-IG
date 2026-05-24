@@ -5,10 +5,11 @@
 #   2) MySQL/MariaDB  (debian=mysql / rhel=mariadb 자동)
 #   3) DB/계정/스키마 (멱등: 테이블 카운트 체크, localhost+127.0.0.1 양쪽 계정)
 #   4) mTLS 인증서    (CA 보존, 중앙 호스트 SAN 미포함 시에만 server 재서명 → IP변경 안전)
-#   5) Backend/.env   (DATABASE_URL/TLS_*/LLM_SERVER_URL)
-#   6) go build       (서비스용 바이너리 + 컴파일 사전검증)
+#   5) Backend/.env   (DATABASE_URL/TLS_*/LLM_SERVER_URL/XOR enrollment; pepper·KEK 재설치 보존)
+#   6) go build       (server + enroll-token 바이너리 + 컴파일 사전검증)
 #   7) systemd 서비스 + 방화벽
-#   8) 검증           (MySQL ping / 포트 / /api/agents)
+#   8) 검증           (MySQL ping / 포트 / /api/agents / enrollment :9443)
+#   9) Enrollment 토큰 발급 (신규 Agent가 입력할 1회용 ID/XOR Key 화면 출력)
 #
 # 사용: ./deploy/setup-central.sh [--no-service] [--regen-certs] [--skip-db]
 # cluster.env 의 IG_CENTRAL_HOST/IG_LLM_HOST/IG_DB_*/IG_*_PORT 를 참고한다.
@@ -56,7 +57,7 @@ LLM_URL="http://${LLM_HOST}:${LLM_PORT}"
 need openssl
 export PATH="$PATH:/usr/local/go/bin"
 
-step "1/8 Go ${GO_VERSION}"
+step "1/9 Go ${GO_VERSION}"
 go_arch() {
     case "$(uname -m)" in
         x86_64|amd64) echo amd64 ;;
@@ -96,7 +97,7 @@ mysql_service_name() {
     echo ""
 }
 if [[ "$SKIP_DB" -eq 0 ]]; then
-    step "2/8 MySQL/MariaDB"
+    step "2/9 MySQL/MariaDB"
     svc="$(mysql_service_name)"
     if [[ -n "$svc" ]] && systemctl is-active --quiet "$svc"; then
         ok "${svc} 이미 구동 중 — 설치 스킵"
@@ -124,7 +125,7 @@ if [[ "$SKIP_DB" -eq 0 ]]; then
 fi
 
 if [[ "$SKIP_DB" -eq 0 ]]; then
-    step "3/8 DB '${DB_NAME}' / 계정 '${DB_USER}' / 스키마"
+    step "3/9 DB '${DB_NAME}' / 계정 '${DB_USER}' / 스키마"
     mark "MySQL 소켓 관리접속 실패 — root가 비번 인증이면: sudo mysql -u root -p 로 수동 확인"
     $SUDO mysql -e 'SELECT 1' >/dev/null 2>&1 || die "MySQL 관리(소켓) 접속 실패" \
         "대부분 'sudo mysql'은 소켓 인증으로 됩니다. root에 비밀번호가 걸려있다면 일시 해제 후 재실행하세요."
@@ -143,17 +144,19 @@ SQL
     ok "DB/계정 준비 완료 (localhost + 127.0.0.1)"
 
     # 스키마: schema.sql의 CREATE INDEX는 IF NOT EXISTS 미지원 → 재적용 시 중복오류.
-    # 기대 테이블 4개가 모두 있으면 스킵, 아니면 --force로 부족분만 자가치유.
-    expected=4
+    # 기대 테이블 7개가 모두 있으면 스킵, 아니면 --force로 부족분만 자가치유.
+    # (CREATE TABLE IF NOT EXISTS라 재적용 안전, CREATE INDEX 중복은 --force로 무시)
+    expected=7
+    table_filter="'agents','agent_certificates','agent_enrollments','file_events','file_event_process_chain','alerts','auth_state'"
     have_tables="$($SUDO mysql -N -B -e \
-        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${DB_NAME}' AND table_name IN ('agents','file_events','alerts','auth_state');" 2>/dev/null || echo 0)"
+        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${DB_NAME}' AND table_name IN (${table_filter});" 2>/dev/null || echo 0)"
     if [[ "$have_tables" == "$expected" ]]; then
         ok "스키마 이미 적용됨(테이블 ${have_tables}/${expected}) — 스킵"
     else
         log "스키마 적용(현재 ${have_tables}/${expected}) — 부족분 생성"
         $SUDO mysql --force "$DB_NAME" < "$SCHEMA_FILE" 2>/dev/null || true
         have_tables="$($SUDO mysql -N -B -e \
-            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${DB_NAME}' AND table_name IN ('agents','file_events','alerts','auth_state');" 2>/dev/null || echo 0)"
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${DB_NAME}' AND table_name IN (${table_filter});" 2>/dev/null || echo 0)"
         [[ "$have_tables" == "$expected" ]] || die "스키마 적용 실패(${have_tables}/${expected})" \
             "sudo mysql ${DB_NAME} < ${SCHEMA_FILE} 를 수동 실행해 오류를 확인하세요."
         ok "스키마 적용 완료(${have_tables}/${expected})"
@@ -169,7 +172,7 @@ SQL
     fi
 fi
 
-step "4/8 mTLS 인증서 (${CERT_DIR})"
+step "4/9 mTLS 인증서 (${CERT_DIR})"
 mkdir -p "$CERT_DIR"
 
 # server.crt SAN이 IG_CENTRAL_HOST를 포함하는지
@@ -250,7 +253,39 @@ openssl verify -CAfile "${CERT_DIR}/ca.crt" "${CERT_DIR}/server.crt" >/dev/null 
 openssl verify -CAfile "${CERT_DIR}/ca.crt" "${CERT_DIR}/agent.crt" >/dev/null && \
     ok "인증서 체인 검증 통과" || die "인증서 체인 검증 실패" "--regen-certs 로 전체 재발급하세요."
 
-step "5/8 Backend/.env"
+step "5/9 Backend/.env"
+# XOR enrollment 비밀값(pepper/KEK)은 재설치 시 절대 바뀌면 안 된다 — 바뀌면 기존
+# 발급 인증서/enrollment row가 전부 무효화된다. 기존 .env에 '유효한' 값이 있으면 재사용.
+#   pepper: 32자 이상 + placeholder 금지(백엔드 ValidateSecretValue와 동일 규칙)
+#   KEK   : base64 디코드 시 정확히 32바이트(key_vault.go NewKeyVault와 동일 규칙)
+ig_env_val() { [[ -f "$ENV_FILE" ]] || return 1; grep -E "^$1=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2-; }
+secret_valid() {  # 길이>=32 && placeholder 미포함
+    local v="$1"
+    [[ "${#v}" -ge 32 ]] || return 1
+    printf '%s' "$v" | grep -qiE 'change-?me|replace[-_]?me|placeholder|example|local[-_]dev|[<>]' && return 1
+    return 0
+}
+kek_valid() {  # base64 → 정확히 32바이트
+    local v="$1" n
+    [[ -n "$v" ]] || return 1
+    n="$(printf '%s' "$v" | base64 -d 2>/dev/null | wc -c | tr -d ' ')"
+    [[ "$n" == "32" ]]
+}
+ENROLL_PEPPER="$(ig_env_val ENROLL_SECRET_PEPPER || true)"
+if secret_valid "$ENROLL_PEPPER"; then
+    log "ENROLL_SECRET_PEPPER 기존 값 재사용(재설치 안전)"
+else
+    ENROLL_PEPPER="$(openssl rand -hex 32)"   # 64자 hex
+    log "ENROLL_SECRET_PEPPER 신규 생성"
+fi
+ENROLL_KEK="$(ig_env_val ENROLL_KEY_KEK || true)"
+if kek_valid "$ENROLL_KEK"; then
+    log "ENROLL_KEY_KEK 기존 값 재사용(재설치 안전)"
+else
+    ENROLL_KEK="$(openssl rand 32 | base64)"   # 32바이트 → base64
+    log "ENROLL_KEY_KEK 신규 생성"
+fi
+
 ig_write_atomic "$ENV_FILE" <<EOF
 # KN-IG 중앙 서버 설정 — deploy/setup-central.sh 생성 ($(date -u +%FT%TZ))
 DATABASE_URL=${DB_USER}:${DB_PASS}@tcp(127.0.0.1:3306)/${DB_NAME}?parseTime=true
@@ -261,19 +296,30 @@ TLS_CERT=./certs/server.crt
 TLS_KEY=./certs/server.key
 # LLM 리포트 서버 위치(별도 VM). 미가동이어도 백엔드는 기동되며 리포트만 503→콘솔 mock 폴백.
 LLM_SERVER_URL=${LLM_URL}
+# XOR enrollment (신규 Agent 최초 등록 :9443). pepper/KEK는 재설치 시 보존(위 재사용 로직).
+ENROLL_ADDR=:9443
+ENROLL_SECRET_PEPPER=${ENROLL_PEPPER}
+ENROLL_KEY_KEK=${ENROLL_KEK}
+AGENT_CA_CERT=./certs/ca.crt
+AGENT_CA_KEY=./certs/ca.key
+AGENT_CERT_TTL_HOURS=8760
 EOF
 chmod 600 "$ENV_FILE" 2>/dev/null || true
-ok ".env 작성 — LLM_SERVER_URL=${LLM_URL}"
+ok ".env 작성 — LLM_SERVER_URL=${LLM_URL}, enrollment(:9443) 활성"
 
-step "6/8 go build"
+step "6/9 go build"
 mark "go build 실패 — 컴파일 오류 또는 모듈 다운로드(GOPROXY/인터넷) 문제"
 ( cd "$BACKEND_DIR" && retry 2 5 -- go build -o bin/server ./cmd/server )
 [[ -x "${BACKEND_DIR}/bin/server" ]] || die "서버 바이너리 빌드 실패" "cd Backend && go build ./cmd/server 로 오류 확인"
-ok "바이너리: ${BACKEND_DIR}/bin/server"
+# enroll-token: 부트스트랩 enrollment 토큰 발급 CLI(아래 enrollment 단계에서 사용)
+mark "enroll-token 빌드 실패 — cmd/enroll-token 컴파일 오류 확인"
+( cd "$BACKEND_DIR" && retry 2 5 -- go build -o bin/enroll-token ./cmd/enroll-token )
+[[ -x "${BACKEND_DIR}/bin/enroll-token" ]] || die "enroll-token 바이너리 빌드 실패" "cd Backend && go build ./cmd/enroll-token 로 오류 확인"
+ok "바이너리: ${BACKEND_DIR}/bin/{server,enroll-token}"
 
 SVC_NAME="kn-ig-central.service"
 if [[ "$WITH_SERVICE" -eq 1 ]] && have systemctl; then
-    step "7/8 systemd 서비스 (${SVC_NAME})"
+    step "7/9 systemd 서비스 (${SVC_NAME})"
     run_user="${SUDO_USER:-$(id -un)}"
     run_group="$(id -gn "$run_user" 2>/dev/null || echo "$run_user")"
     # 바이너리/.env/certs를 서비스 실행 유저가 읽을 수 있게 소유권 정리
@@ -305,13 +351,13 @@ EOF
     ig_open_firewall_port "$TCP_PORT" tcp
     ok "서비스 active: $($SUDO systemctl is-active "$SVC_NAME" 2>/dev/null || echo unknown)"
 else
-    step "7/8 systemd 미사용 — 수동 실행 안내"
+    step "7/9 systemd 미사용 — 수동 실행 안내"
     log "  cd ${BACKEND_DIR} && ./bin/server      # 또는 go run ./cmd/server"
     ig_open_firewall_port "$HTTP_PORT" tcp 2>/dev/null || true
     ig_open_firewall_port "$TCP_PORT" tcp 2>/dev/null || true
 fi
 
-step "8/8 검증"
+step "8/9 검증"
 if [[ "$WITH_SERVICE" -eq 1 ]] && have systemctl; then
     if wait_tcp 127.0.0.1 "$HTTP_PORT" 30 1; then
         # /api/* 는 PIN 인증(Bearer)이 걸려 토큰 없이는 401이 정상이다. 따라서 무인증
@@ -333,12 +379,45 @@ if [[ "$WITH_SERVICE" -eq 1 ]] && have systemctl; then
     else
         warn "LLM(${LLM_URL}) 미도달 — LLM VM 셋업/방화벽 확인(리포트 외 기능은 정상)"
     fi
+    tcp_open 127.0.0.1 9443 3 && ok "XOR enrollment :9443 리슨 확인" \
+        || warn "enrollment :9443 미확인 — 기동 로그 확인(신규 Agent 등록에 필요)"
+    ig_open_firewall_port 9443 tcp
+fi
+
+# enrollment 토큰은 신규 Agent가 인증서를 발급받기 위한 1회용 부트스트랩 자격이다.
+# enroll-token은 DATABASE_URL/PEPPER/KEK를 .env(cwd=Backend)에서 읽어 DB에 토큰 row를 쓴다.
+# XOR_KEY는 이미 base64url ASCII 텍스트라 그대로 출력한다(추가 인코딩 금지 — agent 입력값과 백엔드 검증값이 동일해야 함).
+ENROLL_TOKEN_BIN="${BACKEND_DIR}/bin/enroll-token"
+if [[ "$SKIP_DB" -eq 0 ]] && [[ -x "$ENROLL_TOKEN_BIN" ]]; then
+    step "9/9 Enrollment 부트스트랩 토큰 발급"
+    mark "enroll-token 실행 실패 — DB/PEPPER/KEK(.env) 확인"
+    token_out="$( cd "$BACKEND_DIR" && "$ENROLL_TOKEN_BIN" -allow-unbound -ttl-hours 24 2>/dev/null )" || true
+    enroll_id="$(printf '%s\n' "$token_out" | grep -E '^ENROLLMENT_ID=' | head -1 | cut -d= -f2-)"
+    xor_key="$(printf '%s\n'  "$token_out" | grep -E '^XOR_KEY=' | head -1 | sed 's/^XOR_KEY=//')"
+    enroll_exp="$(printf '%s\n' "$token_out" | grep -E '^EXPIRES_AT=' | head -1 | cut -d= -f2-)"
+    if [[ -n "$enroll_id" && -n "$xor_key" ]]; then
+        ok "부트스트랩 토큰 발급 완료(만료: ${enroll_exp:-24h})"
+        echo
+        printf '%s━━ Agent Enrollment 자격(이번에 설치할 Agent에 입력) ━━━━━━━%s\n' "$_C_BLU" "$_C_RST"
+        printf '   %sEnrollment ID%s : %s%s%s\n' "$_C_BLD" "$_C_RST" "$_C_GRN" "$enroll_id" "$_C_RST"
+        printf '   %sXOR Key%s       : %s%s%s\n' "$_C_BLD" "$_C_RST" "$_C_GRN" "$xor_key" "$_C_RST"
+        printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$_C_BLU" "$_C_RST"
+        log "  Agent VM에서: kn-ig --agent ${IG_CENTRAL_HOST} 실행 후 'sudo IG_ENROLL_HOST=${IG_CENTRAL_HOST} agent --enroll'"
+        log "  위 ID/Key를 입력하면 인증서가 발급됩니다(토큰은 24h·1회용 — 만료 시 재설치/재발급)."
+        warn "위 값은 화면에만 표시됩니다(로그 미기록). 안전한 채널로 Agent 담당자에게 전달하세요."
+    else
+        warn "enroll-token 출력 파싱 실패 — 수동 발급: (cd ${BACKEND_DIR} && ./bin/enroll-token -allow-unbound -ttl-hours 24)"
+    fi
+    unset token_out xor_key
+else
+    step "9/9 Enrollment 토큰 발급 — 생략(--skip-db 또는 enroll-token 미빌드)"
+    log "  수동 발급: (cd ${BACKEND_DIR} && ./bin/enroll-token -allow-unbound -ttl-hours 24)"
 fi
 
 echo
 ok "중앙 서버 셋업 완료"
 log "  바이너리 : ${BACKEND_DIR}/bin/server  (cwd=Backend 필요: .env/certs 상대경로)"
-log "  HTTP     : :${HTTP_PORT} (콘솔 REST/SSE)   TCP(mTLS): :${TCP_PORT} (Agent)"
+log "  HTTP     : :${HTTP_PORT} (콘솔 REST/SSE)   TCP(mTLS): :${TCP_PORT} (Agent)   Enrollment: :9443 (신규 Agent)"
 log "  LLM 연동 : ${LLM_URL}"
-log "  Agent 배포용 인증서: ${CERT_DIR}/{ca.crt,agent.crt,agent.key}  → setup-agent.sh가 사용"
+log "  Agent 등록: 각 Agent VM에서 'sudo kn-ig --agent ${IG_CENTRAL_HOST}' → 'sudo agent --enroll'에 위 ID/Key 입력"
 log "  전체 점검: deploy/verify.sh"
