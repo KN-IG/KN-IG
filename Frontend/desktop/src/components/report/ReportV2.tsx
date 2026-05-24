@@ -1,18 +1,25 @@
 // 주간 종합 무결성 리포트.
-// CSS는 reportV2.css(.report-v2 스코프),
-// 차트는 chart.js. topbar/progress는 콘솔 Navbar와 중복이라 생략(원본 embedded 모드와 동일).
+// CSS는 reportV2.css(.report-v2 스코프), 차트는 chart.js. 외부 의존/런타임 fetch 없음(콘솔 내장).
 //
-// 섹션: HERO · RANGE · 01 KEY FINDINGS · 02 OVERVIEW(KPI) · 03 TREND · 04 SEVERITY&TARGETS
-//       · 05 WHERE&HOW(ATT&CK) · 06 INCIDENTS · 07 ACTIONS · 08 REFERENCES
+// 흐름: [생성 전] HERO + 생성 패널(기간·생성방식·생성버튼)
+//       → [생성] 섹션 순차 등장(연출) → [완료] 전체 표시 + 다시 생성/PDF
+//
+// 생성 방식(renderMode):
+//   - anim   : 완성된 리포트를 섹션별로 부드럽게 순차 노출(프론트 연출).
+//   - stream : (2단계) LLM 토큰 스트리밍을 실시간 표시. 현재는 빠른 순차 노출로 자리만 둠.
+//
+// 섹션: 01 KEY FINDINGS · 02 OVERVIEW(KPI) · 03 TREND · 04 SEVERITY&TARGETS
+//       · 05 MITRE ATT&CK · 06 INCIDENTS · 07 ACTIONS · 08 REFERENCES
 import { useEffect, useMemo, useState } from "react";
 import "./reportV2.css";
 import { MOCK_REPORT, type ReportSummary } from "@/report/reportMockData";
 import { apiFetch } from "@/api/client";
 import { config } from "@/config";
 import { printReport } from "@/tauri/useWindow";
+import { cn } from "@/lib/utils";
 import { KeyFindings } from "./KeyFindings";
 import { Kpis } from "./Kpis";
-import { TimelineChart, SeverityChart, CategoryChart, HostChart } from "./ReportCharts";
+import { TimelineChart, SeverityChart, CategoryChart } from "./ReportCharts";
 import { AttackMatrix } from "./AttackMatrix";
 import { Campaign } from "./Campaign";
 import { Incidents } from "./Incidents";
@@ -34,6 +41,10 @@ function summarize(d: ReportSummary) {
 }
 
 export type RangeMode = "since" | "7d" | "custom";
+export type RenderMode = "anim" | "stream";
+
+// 등장 섹션 수(01~08). reveal 인덱스 상한.
+const SECTION_COUNT = 8;
 
 // 기준 종료일(mock 데모) — 실데이터에선 무관.
 const BASE_END = "2026-05-21";
@@ -63,8 +74,6 @@ function rangeToDates(range: RangeMode, fromStr: string, toStr: string): { from:
 // mock 모드 동적 파생 — 기간(일수)에 비례해 데이터를 스케일하고 차트 일자축을 재생성한다.
 // (사건/매트릭스/권고 등 서술형은 base 유지.)
 function deriveReport(base: ReportSummary, range: RangeMode, fromStr: string, toStr: string): ReportSummary {
-  // since(저번 이후)·7d(최근 7일)는 v2 기본 데이터(160건)를 그대로 표시.
-  // custom 기간을 고르면 선택 일수에 비례해 동적 파생한다.
   if (range !== "custom") return base;
   const dayCount = rangeDayCount(range, fromStr, toStr);
   const factor = dayCount / 7;
@@ -99,7 +108,7 @@ function deriveReport(base: ReportSummary, range: RangeMode, fromStr: string, to
   };
 }
 
-// 실서버(LLM 프록시)에서 주간 요약을 받아온다. 원본 loadData 이식.
+// 실서버(LLM 프록시)에서 주간 요약을 받아온다.
 async function loadReportSummary(range: RangeMode, fromStr: string, toStr: string): Promise<ReportSummary | null> {
   const { from, to } = rangeToDates(range, fromStr, toStr);
   const url = `/api/reports/summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
@@ -108,47 +117,136 @@ async function loadReportSummary(range: RangeMode, fromStr: string, toStr: strin
   return d && Array.isArray(d.days) ? (d as ReportSummary) : null;
 }
 
+type Phase = "idle" | "loading" | "reveal" | "done";
+
 export function ReportV2() {
   const [base, setBase] = useState<ReportSummary>(MOCK_REPORT);
   const [range, setRange] = useState<RangeMode>("since");
   const [from, setFrom] = useState("2026-05-14");
   const [to, setTo] = useState("2026-05-21");
-  // 실서버 연동(useMock=false)에서 응답 실패 시 mock으로 폴백하되, 그 사실을 화면에 표시한다.
-  // (조용한 폴백은 "연결 확인" 단계에서 가짜 성공으로 보여 디버깅을 흐린다.)
+  const [renderMode, setRenderMode] = useState<RenderMode>("anim");
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [revealed, setRevealed] = useState(0);
   const [liveError, setLiveError] = useState<string | null>(null);
 
-  // mock: 기간 선택에 맞춰 데이터를 동적 파생. 실서버: 기간 변경 시 재요청.
   const d = useMemo(
     () => (config.useMock ? deriveReport(base, range, from, to) : base),
     [base, range, from, to],
   );
-
-  useEffect(() => {
-    if (config.useMock) return;
-    let alive = true;
-    loadReportSummary(range, from, to)
-      .then((r) => {
-        if (!alive) return;
-        if (r) {
-          setBase(r);
-          setLiveError(null);
-        } else {
-          setLiveError("응답 형식 불일치(days 없음)"); // 200이나 ReportSummary 아님
-        }
-      })
-      .catch((e) => {
-        if (!alive) return;
-        const msg = e instanceof Error ? e.message : "요청 실패";
-        console.error("리포트 서버 응답 실패 — 임시 데이터로 표시:", e);
-        setLiveError(msg); // 예: "503 Service Unavailable"(LLM 미가동)
-      });
-    return () => {
-      alive = false;
-    };
-  }, [range, from, to]);
-
   const s = summarize(d);
 
+  // 보고서 생성 — 실서버면 먼저 요청 후 연출, mock이면 즉시 연출.
+  async function handleGenerate() {
+    setLiveError(null);
+    setRevealed(0);
+    if (config.useMock) {
+      setPhase("reveal");
+      return;
+    }
+    setPhase("loading");
+    try {
+      const r = await loadReportSummary(range, from, to);
+      if (r) setBase(r);
+      else setLiveError("응답 형식 불일치(days 없음)");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "요청 실패";
+      console.error("리포트 서버 응답 실패 — 임시 데이터로 표시:", e);
+      setLiveError(msg); // 예: "503 Service Unavailable"(LLM 미가동)
+    }
+    setPhase("reveal");
+  }
+
+  function reset() {
+    setPhase("idle");
+    setRevealed(0);
+  }
+
+  // 섹션 순차 등장 — renderMode에 따라 속도 차등(stream은 더 촘촘).
+  // (2단계에서 stream은 LLM SSE 점진 렌더로 교체 예정.)
+  useEffect(() => {
+    if (phase !== "reveal") return;
+    if (revealed >= SECTION_COUNT) {
+      setPhase("done");
+      return;
+    }
+    const delay = renderMode === "stream" ? 170 : 330;
+    const id = setTimeout(() => setRevealed((c) => c + 1), revealed === 0 ? 60 : delay);
+    return () => clearTimeout(id);
+  }, [phase, revealed, renderMode]);
+
+  const generated = phase === "reveal" || phase === "done";
+  // i번째 섹션 reveal 클래스.
+  const rv = (i: number) => cn("reveal", revealed > i && "in");
+
+  // ── 생성 전: HERO + 생성 패널 ──────────────────────────────
+  if (!generated) {
+    return (
+      <div className="report-v2">
+        <div className="wrap">
+          <header className="hero in">
+            <div className="kicker">주간 무결성 리포트</div>
+            <h1>무결성 보안 리포트 생성</h1>
+            <p className="lede">
+              선택한 기간의 무결성 이벤트를 분석해 핵심 발견 · 위험도 · MITRE ATT&amp;CK 공격 수법 ·
+              권고 조치를 종합한 리포트를 생성합니다.
+            </p>
+          </header>
+
+          <div className="gen-panel in">
+            <div className="gen-row">
+              <span className="gen-lab">대상 기간</span>
+              <div className="seg">
+                <button className={range === "since" ? "active" : ""} onClick={() => setRange("since")}>저번 리포트 이후</button>
+                <button className={range === "7d" ? "active" : ""} onClick={() => setRange("7d")}>최근 7일</button>
+                <button className={range === "custom" ? "active" : ""} onClick={() => setRange("custom")}>기간 선택</button>
+              </div>
+              {range === "custom" && (
+                <div className="dates show">
+                  <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+                  <span>→</span>
+                  <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+                </div>
+              )}
+            </div>
+
+            <div className="gen-row">
+              <span className="gen-lab">생성 방식</span>
+              <div className="seg">
+                <button className={renderMode === "anim" ? "active" : ""} onClick={() => setRenderMode("anim")}>연출</button>
+                <button className={renderMode === "stream" ? "active" : ""} onClick={() => setRenderMode("stream")}>실시간 스트리밍</button>
+              </div>
+              <span className="gen-hint">
+                {renderMode === "anim"
+                  ? "완성된 리포트를 섹션별로 부드럽게 표시합니다."
+                  : "LLM이 생성하는 과정을 실시간으로 표시합니다. (2단계 연동 예정)"}
+              </span>
+            </div>
+
+            <button className="btn btn-primary gen-btn" onClick={() => void handleGenerate()} disabled={phase === "loading"}>
+              {phase === "loading" ? (
+                <>
+                  <span className="gen-spin" />분석 중…
+                </>
+              ) : (
+                <>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}>
+                    <path d="M12 3v3m0 12v3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1M3 12h3m12 0h3M5.6 18.4l2.1-2.1m8.6-8.6 2.1-2.1" />
+                  </svg>
+                  리포트 생성
+                </>
+              )}
+            </button>
+
+            {!config.useMock && liveError && (
+              <div className="gen-err">리포트 서버 응답 실패: {liveError} — LLM(:8088)/백엔드 연결을 확인해 주십시오.</div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── 생성 후: 리포트 ────────────────────────────────────────
   return (
     <div className="report-v2">
       <div className="wrap">
@@ -174,22 +272,11 @@ export function ReportV2() {
           </div>
         </header>
 
-        {/* RANGE */}
+        {/* 액션 바 */}
         <div className="range-bar">
-          <div className="seg">
-            <button className={range === "since" ? "active" : ""} onClick={() => setRange("since")}>저번 리포트 이후</button>
-            <button className={range === "7d" ? "active" : ""} onClick={() => setRange("7d")}>최근 7일</button>
-            <button className={range === "custom" ? "active" : ""} onClick={() => setRange("custom")}>기간 선택</button>
-          </div>
-          {range === "custom" && (
-            <div className="dates show">
-              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-              <span>→</span>
-              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-            </div>
-          )}
-          <div className="range-hint">분석 대상 <b>{s.attempts}건</b></div>
-          <button className="btn btn-primary" onClick={() => void printReport()} style={{ marginLeft: 8 }}>
+          <div className="range-hint" style={{ marginLeft: 0 }}>분석 대상 <b>{s.attempts}건</b> · 생성 방식 {renderMode === "anim" ? "연출" : "실시간 스트리밍"}</div>
+          <button className="btn" onClick={reset} style={{ marginLeft: "auto" }}>다시 생성</button>
+          <button className="btn btn-primary" onClick={() => void printReport()}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}>
               <path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z" />
             </svg>
@@ -197,11 +284,11 @@ export function ReportV2() {
           </button>
         </div>
 
-        <KeyFindings findings={d.findings} />
-        <Kpis data={d} />
+        <div className={rv(0)}><KeyFindings findings={d.findings} /></div>
+        <div className={rv(1)}><Kpis data={d} /></div>
 
         {/* 03 TREND */}
-        <section>
+        <section className={rv(2)}>
           <div className="sec-head">
             <div className="eyebrow">03 / TREND</div>
             <h2>차단한 위협 추이</h2>
@@ -222,7 +309,7 @@ export function ReportV2() {
         </section>
 
         {/* 04 SEVERITY & TARGETS */}
-        <section>
+        <section className={rv(3)}>
           <div className="sec-head">
             <div className="eyebrow">04 / SEVERITY &amp; TARGETS</div>
             <h2>위험도 및 표적 자산</h2>
@@ -251,28 +338,23 @@ export function ReportV2() {
           </div>
         </section>
 
-        {/* 05 WHERE & HOW (호스트 차트 — ATT&CK 매트릭스는 다음 단계) */}
-        <section>
+        {/* 05 MITRE ATT&CK */}
+        <section className={rv(4)}>
           <div className="sec-head">
-            <div className="eyebrow">05 / WHERE &amp; HOW</div>
-            <h2>발생 위치 및 공격 수법</h2>
-            <p>호스트별 발생량과 국제 표준(MITRE ATT&amp;CK) 전술 단계별 관측 기법입니다.</p>
-          </div>
-          <div className="card" style={{ marginBottom: "16px" }}>
-            <h3>HMI-01에 집중</h3>
-            <div className="c-sub">호스트별 이벤트 · 차단 vs 미차단(확인 필요)</div>
-            <div className="chart-box" style={{ height: "220px" }}><HostChart data={d} /></div>
+            <div className="eyebrow">05 / MITRE ATT&amp;CK</div>
+            <h2>공격 수법 (MITRE ATT&amp;CK)</h2>
+            <p>공격자가 사용한 수법을 국제 표준 <b>MITRE ATT&amp;CK</b> 전술(목적) 단계별로 분류했습니다.</p>
           </div>
           <div className="card">
             <h3>공격 수법 한눈에 — ATT&amp;CK 매트릭스</h3>
-            <div className="c-sub">공격자가 쓴 수법을 <b>전술(목적) 6단계</b>로 분류했습니다. 각 칸은 관측된 세부 기법이며 <b>색이 진할수록 자주</b> 관측됐습니다.</div>
+            <div className="c-sub">각 칸은 관측된 세부 기법이며 <b>색이 진할수록 자주</b> 관측됐습니다.</div>
             <AttackMatrix matrix={d.attackMatrix} />
             <div className="mx-legend"><span>적게 관측</span><span className="bar" /><span>자주 관측</span></div>
           </div>
         </section>
 
         {/* 06 INCIDENTS */}
-        <section>
+        <section className={rv(5)}>
           <div className="sec-head">
             <div className="eyebrow">06 / INCIDENTS</div>
             <h2>주목할 사건</h2>
@@ -284,7 +366,7 @@ export function ReportV2() {
         </section>
 
         {/* 07 ACTIONS */}
-        <section>
+        <section className={rv(6)}>
           <div className="sec-head">
             <div className="eyebrow">07 / ACTIONS</div>
             <h2>권고 조치</h2>
@@ -294,7 +376,7 @@ export function ReportV2() {
         </section>
 
         {/* 08 REFERENCES */}
-        <section>
+        <section className={rv(7)}>
           <div className="sec-head">
             <div className="eyebrow">08 / REFERENCES</div>
             <h2>참조 기준 · 용어 · 방법론</h2>
