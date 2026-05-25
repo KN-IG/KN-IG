@@ -178,7 +178,14 @@ int ig_hooks_init(void)
     ig_hooks[6].head = &ig_hook_heads->inode_setattr;
 
     for (i = 0; i < ARRAY_SIZE(ig_hooks); i++)
+        /* LSM 훅 리스트는 4.16에서 list_head→hlist로 전환됨.
+           lkm42 커버 범위(4.2~4.14)는 항상 <4.16이라 list_*_rcu가 실제 경로.
+           lkm415.c와의 sister 일관성 차원에서 동일 #if 분기 적용. */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 16, 0)
         hlist_add_tail_rcu(&ig_hooks[i].list, ig_hooks[i].head);
+#else
+        list_add_tail_rcu(&ig_hooks[i].list, ig_hooks[i].head);
+#endif
 
     pr_info("hooks installed (LSM injection 4.2~4.14, %zu hooks)\n",
             ARRAY_SIZE(ig_hooks));
@@ -190,7 +197,11 @@ void ig_hooks_exit(void)
     int i;
 
     for (i = 0; i < ARRAY_SIZE(ig_hooks); i++)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 16, 0)
         hlist_del_rcu(&ig_hooks[i].list);
+#else
+        list_del_rcu(&ig_hooks[i].list);
+#endif
 
     synchronize_rcu();
 
