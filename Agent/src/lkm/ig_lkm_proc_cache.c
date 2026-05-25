@@ -252,12 +252,14 @@ static void capture_exec_meta(struct task_struct *t,
     if (arg_end > arg_start) {
         size_t want = (size_t)(arg_end - arg_start);
         if (want > cmd_len - 1) want = cmd_len - 1;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
-        copied = pc_access_process_vm_fn(t, arg_start, cmd_out, want, FOLL_ANON);
-#else
-        /* <4.6: 5번째 인자가 gup_flags가 아니라 write(0=read) */
+        /* 5번째 인자는 옛 커널에선 int write(0=읽기), 새 커널에선
+         * unsigned int gup_flags(0=플래그 없음=읽기)다. 0은 양쪽 시그니처
+         * 모두에서 안전한 "읽기"라 버전 분기가 필요 없다. 시그니처 전환
+         * 버전을 추측해 FOLL_ANON(비0)을 넘기면, 아직 int write인 커널에서는
+         * 쓰기 모드로 해석돼 타깃 메모리를 손상시킬 수 있고, FOLL_ANON 미정의
+         * 커널에선 컴파일도 안 된다. argv는 exec 직후라 거의 present이므로
+         * FOLL_ANON의 fault-in 회피 이점은 무시 가능 → 항상 0으로 통일. */
         copied = pc_access_process_vm_fn(t, arg_start, cmd_out, want, 0);
-#endif
         if (copied <= 0) {
             cmd_out[0] = '\0';
         } else {
