@@ -150,6 +150,12 @@ static int ig_mmap_file(struct file *file, unsigned long reqprot,
 {
     if (!file || !(prot & PROT_WRITE))
         return 0;
+    /* MAP_PRIVATE는 COW라 파일을 변경하지 않는다. ELF 데이터 세그먼트가
+       MAP_PRIVATE|PROT_WRITE로 매핑되는데(relocation 후 read-only), 이를
+       차단하면 보호 대상 바이너리 execve가 EPERM으로 실패해 시스템 전체가
+       다운된다. 실제 파일이 바뀌는 MAP_SHARED + PROT_WRITE만 검사한다. */
+    if (!(flags & MAP_SHARED))
+        return 0;
     return ig_check_inode(file->f_inode, IG_OP_WRITE, "mmap_write");
 }
 
