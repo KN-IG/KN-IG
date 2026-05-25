@@ -47,7 +47,9 @@
 
 /* ── 구형 커널 호환 shim ──
  * READ_ONCE/WRITE_ONCE : 3.19+ 도입 (그 전엔 ACCESS_ONCE)
- * ktime_get_real_ns()  : 3.17+ 도입 (그 전엔 ktime_to_ns(ktime_get_real()))
+ * ktime_get_real_ns()  : 3.17+ 도입 (그 전엔 ktime_to_ns(ktime_get_real())).
+ *   단 RHEL/CentOS는 3.10 EL 커널에 이를 백포팅하므로, 버전 가드만 보면
+ *   자체 정의가 백포팅된 정의와 redefinition 충돌한다 → RHEL_RELEASE_CODE로 제외.
  */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 19, 0)
 #  ifndef READ_ONCE
@@ -57,12 +59,42 @@
 #    define WRITE_ONCE(x, val)  (ACCESS_ONCE(x) = (val))
 #  endif
 #endif
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 17, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 17, 0) && !defined(RHEL_RELEASE_CODE)
 static inline u64 ktime_get_real_ns(void)
 {
     return ktime_to_ns(ktime_get_real());
 }
 #endif
+
+/* ── kallsyms 기반 심볼 리졸버 (전 버전 공통) ──
+ * tracepoint 포인터(>=3.15)와 미export 심볼(get_mm_exe_file/access_process_vm)을
+ * 런타임에 찾는 데 모두 사용. 5.7+는 kallsyms_lookup_name이 미export라 kprobe로
+ * 주소를 얻고, 그 미만은 export돼 있어 직접 사용한다. */
+typedef unsigned long (*kallsyms_lookup_name_t)(const char *name);
+static kallsyms_lookup_name_t pc_kallsyms_fn;
+
+static int pc_resolve_kallsyms(void)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 7, 0)
+    struct kprobe kp = { .symbol_name = "kallsyms_lookup_name" };
+    int ret = register_kprobe(&kp);
+    if (ret < 0) return ret;
+    pc_kallsyms_fn = (kallsyms_lookup_name_t)kp.addr;
+    unregister_kprobe(&kp);
+#else
+    pc_kallsyms_fn = kallsyms_lookup_name;
+#endif
+    return 0;
+}
+
+/* get_mm_exe_file / access_process_vm: 3.10 EL·4.4 mainline 등에서 EXPORT_SYMBOL이
+ * 안 돼 있어 직접 링크 시 insmod "Unknown symbol"로 적재 실패한다. kallsyms로
+ * resolve해 함수 포인터로 호출(export된 커널도 동일 주소라 동작 차이 없음). */
+typedef struct file *(*pc_get_mm_exe_file_t)(struct mm_struct *mm);
+typedef int (*pc_access_process_vm_t)(struct task_struct *tsk, unsigned long addr,
+                                      void *buf, int len, unsigned int gup_flags);
+static pc_get_mm_exe_file_t   pc_get_mm_exe_file_fn;
+static pc_access_process_vm_t pc_access_process_vm_fn;
 
 /* ── 튜닝 상수 ────────────────────────────────────── */
 #define IG_PC_HASH_BITS      12                   /* 4096 buckets */
@@ -190,7 +222,7 @@ static void capture_exec_meta(struct task_struct *t,
     if (!mm) return;
 
     /* exe path */
-    exe_file = get_mm_exe_file(mm);
+    exe_file = pc_get_mm_exe_file_fn(mm);
     if (exe_file) {
         path_buf = (char *)__get_free_page(GFP_KERNEL);
         if (path_buf) {
@@ -221,10 +253,10 @@ static void capture_exec_meta(struct task_struct *t,
         size_t want = (size_t)(arg_end - arg_start);
         if (want > cmd_len - 1) want = cmd_len - 1;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
-        copied = access_process_vm(t, arg_start, cmd_out, want, FOLL_ANON);
+        copied = pc_access_process_vm_fn(t, arg_start, cmd_out, want, FOLL_ANON);
 #else
         /* <4.6: 5번째 인자가 gup_flags가 아니라 write(0=read) */
-        copied = access_process_vm(t, arg_start, cmd_out, want, 0);
+        copied = pc_access_process_vm_fn(t, arg_start, cmd_out, want, 0);
 #endif
         if (copied <= 0) {
             cmd_out[0] = '\0';
@@ -517,29 +549,12 @@ static void ig_pc_preload(void)
     pr_info("proc_cache: preload %d existing processes\n", n);
 }
 
-/* ── tracepoint 등록 API ──
+/* ── tracepoint 포인터 ──
  * 3.15+ : tracepoint_probe_register가 struct tracepoint* 를 받는다. 그 포인터는
  *         __tracepoint_sched_process_* 심볼을 kallsyms로 찾아 얻는다(미export 우회).
  * <3.15 : tracepoint_probe_register가 이름(const char*)을 받는다 → 포인터 lookup 불필요.
  */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0)
-typedef unsigned long (*kallsyms_lookup_name_t)(const char *name);
-static kallsyms_lookup_name_t pc_kallsyms_fn;
-
-static int pc_resolve_kallsyms(void)
-{
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 7, 0)
-    struct kprobe kp = { .symbol_name = "kallsyms_lookup_name" };
-    int ret = register_kprobe(&kp);
-    if (ret < 0) return ret;
-    pc_kallsyms_fn = (kallsyms_lookup_name_t)kp.addr;
-    unregister_kprobe(&kp);
-#else
-    pc_kallsyms_fn = kallsyms_lookup_name;
-#endif
-    return 0;
-}
-
 static struct tracepoint *tp_fork;
 static struct tracepoint *tp_exec;
 static struct tracepoint *tp_exit;
@@ -556,13 +571,23 @@ int ig_proc_cache_init(void)
     INIT_LIST_HEAD(&ig_pc_lru);
     ig_pc_window_jiffies = jiffies;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0)
+    /* kallsyms 리졸버 확보 (tracepoint 포인터 + 미export 심볼에 공통 사용) */
     ret = pc_resolve_kallsyms();
     if (ret) {
         pr_err("proc_cache: kallsyms_lookup_name resolve failed: %d\n", ret);
         return ret;
     }
 
+    /* exe/cmdline 캡처용 미export 심볼 resolve (직접 링크 시 적재 실패 회피) */
+    pc_get_mm_exe_file_fn   = (pc_get_mm_exe_file_t)pc_kallsyms_fn("get_mm_exe_file");
+    pc_access_process_vm_fn = (pc_access_process_vm_t)pc_kallsyms_fn("access_process_vm");
+    if (!pc_get_mm_exe_file_fn || !pc_access_process_vm_fn) {
+        pr_err("proc_cache: get_mm_exe_file/access_process_vm not found "
+                "(exe=%p vm=%p)\n", pc_get_mm_exe_file_fn, pc_access_process_vm_fn);
+        return -ENOENT;
+    }
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0)
     tp_fork = (struct tracepoint *)pc_kallsyms_fn("__tracepoint_sched_process_fork");
     tp_exec = (struct tracepoint *)pc_kallsyms_fn("__tracepoint_sched_process_exec");
     tp_exit = (struct tracepoint *)pc_kallsyms_fn("__tracepoint_sched_process_exit");
