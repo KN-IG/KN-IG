@@ -14,9 +14,9 @@
  *   │                  pop  ▼                               │
  *   │          [메인 스레드: 통합 이벤트 처리기]              │
  *   │           - 무결성 검사 (SHA-256)                     │
- *   │           - ig_tcp_send_event() → Go 서버            │
+ *   │           - transport runtime → Go 서버             │
  *   │                                                      │
- *   │  [스레드 3: heartbeat]  30초 주기 HEARTBEAT 전송       │
+ *   │  [transport runtime]    연결/등록/heartbeat 관리      │
  *   └──────────────────────────────────────────────────────┘
  *
  * 우선순위:
@@ -59,9 +59,7 @@
 #define IG_EBPF_BLOCK_AUDIT 0u
 #define IG_EBPF_BLOCK_DENY  1u
 #endif
-#include "transport/tls_context.h"
-#include "transport/tcp_client.h"
-#include "transport/heartbeat.h"
+#include "transport/runtime.h"
 #include "scanner/baseline.h"
 #include "lkm/lkm_client.h"
 #include "enroll/enroll.h"
@@ -90,11 +88,8 @@ static uint32_t       g_ebpf_block  = IG_EBPF_BLOCK_DENY;
 static ig_config_t  *g_cfg         = NULL;
 static char           g_config_path[IG_MAX_PATH];
 
-/* ── transport 전역 상태 ───────────────────────── */
-static ig_tls_ctx_t    g_tls_ctx;
-static ig_tcp_client_t g_tcp_client;
-static char             g_agent_id[128] = {0};
-static int              g_transport_ok  = 0;
+/* ── transport runtime ─────────────────────────── */
+static ig_transport_runtime_t g_transport;
 
 /* ── 외부 함수 ─────────────────────────────────── */
 extern ig_backend_t *ig_inotify_create(void);
@@ -248,23 +243,6 @@ static void *lkm_event_thread(void *arg)
 }
 
 
-static void send_event_with_reconnect(const ig_event_t *ev) {
-    if (!g_transport_ok || !g_agent_id[0]) return;
-    int ret = ig_tcp_send_event(&g_tcp_client, ev);
-    if (ret == -2) {
-        LOG_WARN_IG("[transport] FILE_EVENT 전송 실패 — 재연결 시도");
-        g_transport_ok = 0;
-        if (ig_tcp_reconnect(&g_tcp_client) == 0) {
-            snprintf(g_agent_id, sizeof(g_agent_id), "%llu",
-                     (unsigned long long)g_tcp_client.agent_id);
-            g_transport_ok = 1;
-            ig_tcp_send_event(&g_tcp_client, ev);
-        }
-    } else if (ret < 0) {
-        LOG_WARN_IG("[transport] FILE_EVENT 전송 실패 (재시도 예정)");
-    }
-}
-
 static void process_event(const ig_event_t *ev) {
     /* eBPF·LKM 이벤트는 각 수신 스레드에서 이미 로그 출력 완료 → 중복 스킵 */
     if (ev->source != IG_SOURCE_EBPF && ev->source != IG_SOURCE_LKM) {
@@ -318,7 +296,7 @@ static void process_event(const ig_event_t *ev) {
     }
 
     /* transport: 서버로 FILE_EVENT 전송 */
-    send_event_with_reconnect(ev);
+    ig_transport_runtime_send_event(&g_transport, ev);
 }
 
 /* ── 설정 재로드 (SIGHUP) ───────────────────────── */
@@ -853,10 +831,6 @@ int main(int argc, char *argv[]) {
     pthread_t ebpf_thread = 0;
 #endif
     pthread_t lkm_thread  = 0;
-    pthread_t hb_thread   = 0;
-    int tls_inited        = 0;
-    int transport_inited  = 0;
-    ig_heartbeat_arg_t hb_arg = {0};
 
 #ifdef HAVE_LIBBPF
     if (cfg->ebpf_enabled && kver >= KERNEL_VER(5, 8)) {
@@ -916,8 +890,6 @@ int main(int argc, char *argv[]) {
     if ((e = getenv("IG_AGENT_KEY"))) strncpy(agent_key, e, sizeof(agent_key) - 1);
     else build_cert_path(agent_key, sizeof(agent_key), "agent.key");
 
-    LOG_INFO_IG("[transport] 서버: %s:%d", server_host, server_port);
-
     if (current_transport_monitor_type(&transport_monitor_type) < 0) {
         LOG_WARN_IG("[transport] eBPF/LKM 미활성 — transport 등록 생략");
     } else {
@@ -926,60 +898,19 @@ int main(int argc, char *argv[]) {
         get_hostname(hostname, sizeof(hostname));
         get_local_ip(server_host, server_port, local_ip, sizeof(local_ip));
 
-        int cert_missing = ig_enroll_needed(agent_crt, agent_key);
-        if (cert_missing) {
-            LOG_WARN_IG("[enroll] 인증서 없음 — `agent --enroll`을 먼저 실행해야 transport가 활성화됨");
-            LOG_WARN_IG("[transport] 인증서 누락 — transport 비활성화");
-        } else if (tls_context_init(&g_tls_ctx, ca_crt, agent_crt, agent_key) < 0) {
-            LOG_WARN_IG("[transport] TLS 컨텍스트 초기화 실패 — transport 비활성화");
-        } else {
-            tls_inited = 1;
-
-            if (ig_tcp_init(&g_tcp_client, &g_tls_ctx, server_host,
-                             (uint16_t)server_port) < 0) {
-                LOG_WARN_IG("[transport] TCP 클라이언트 초기화 실패");
-            } else {
-                transport_inited = 1;
-                snprintf(g_tcp_client.reg_hostname, sizeof(g_tcp_client.reg_hostname),
-                         "%s", hostname);
-                snprintf(g_tcp_client.reg_ip, sizeof(g_tcp_client.reg_ip),
-                         "%s", local_ip);
-                snprintf(g_tcp_client.reg_os, sizeof(g_tcp_client.reg_os),
-                         "%s", "Linux");
-                g_tcp_client.reg_monitor_type = transport_monitor_type;
-                g_tcp_client.reg_cached = 1;
-            }
-
-            if (transport_inited && ig_tcp_connect(&g_tcp_client) < 0) {
-                LOG_WARN_IG("[transport] 서버 연결 실패 — 백그라운드 재연결 시도");
-                if (ig_tcp_reconnect(&g_tcp_client) == 0) {
-                    snprintf(g_agent_id, sizeof(g_agent_id), "%llu",
-                             (unsigned long long)g_tcp_client.agent_id);
-                    LOG_INFO_IG("[transport] 등록 완료 — agent_id: %s", g_agent_id);
-                    g_transport_ok = 1;
-                }
-            } else if (transport_inited) {
-                if (ig_tcp_register(&g_tcp_client, hostname, local_ip,
-                                     transport_monitor_type,
-                                     "Linux", g_agent_id, sizeof(g_agent_id)) == 0) {
-                    LOG_INFO_IG("[transport] 등록 완료 — agent_id: %s", g_agent_id);
-                    g_transport_ok = 1;
-                } else {
-                    LOG_WARN_IG("[transport] REGISTER 실패");
-                }
-            }
-        }
-    }
-
-    /* ── heartbeat 스레드 ─────────────────────── */
-    if (g_transport_ok) {
-        hb_arg.cli = &g_tcp_client;
-        hb_arg.interval_sec = IG_HEARTBEAT_DEFAULT_SEC;
-        hb_arg.running = 1;
-        if (pthread_create(&hb_thread, NULL, ig_heartbeat_thread, &hb_arg) != 0)
-            LOG_WARN_IG("[transport] heartbeat 스레드 생성 실패");
-        else
-            LOG_INFO_IG("[transport] heartbeat 스레드 시작 완료");
+        ig_transport_runtime_config_t transport_cfg = {
+            .server_host = server_host,
+            .server_port = (uint16_t)server_port,
+            .ca_crt = ca_crt,
+            .agent_crt = agent_crt,
+            .agent_key = agent_key,
+            .hostname = hostname,
+            .local_ip = local_ip,
+            .os = "Linux",
+            .monitor_type = transport_monitor_type,
+            .cert_missing = ig_enroll_needed(agent_crt, agent_key),
+        };
+        ig_transport_runtime_start(&g_transport, &transport_cfg);
     }
 
     /* ── PID ancestry 캐시 ───────────────────── */
@@ -1071,8 +1002,8 @@ int main(int argc, char *argv[]) {
     /* ── 정상 종료 ─────────────────────────────── */
     LOG_INFO_IG("received termination signal");
 
-    if (hb_arg.running) hb_arg.running = 0;
-    if (hb_thread)    { pthread_join(hb_thread,    NULL); LOG_INFO_IG("heartbeat 스레드 합류"); }
+    ig_transport_runtime_stop(&g_transport);
+
     /* eBPF: stop → join → cleanup 순서를 지켜야 use-after-free 없음 */
 #ifdef HAVE_LIBBPF
     if (g_ebpf_active) ebpf_policy_stop();
@@ -1084,15 +1015,6 @@ int main(int argc, char *argv[]) {
     if (lkm_thread)   { pthread_join(lkm_thread,   NULL); LOG_INFO_IG("LKM 스레드 합류"); }
 
     if (g_be_inotify)  { g_be_inotify->cleanup(g_be_inotify); free(g_be_inotify); }
-
-    if (transport_inited) {
-        ig_tcp_disconnect(&g_tcp_client);
-        ig_tcp_free(&g_tcp_client);
-    }
-    if (tls_inited) {
-        tls_context_free(&g_tls_ctx);
-        LOG_INFO_IG("[transport] 연결 종료");
-    }
 
     ig_queue_destroy(queue);
     free(queue);

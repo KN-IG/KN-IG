@@ -49,6 +49,7 @@ set(TRANSPORT_SRCS
     src/transport/protocol.c
     src/transport/tcp_client.c
     src/transport/heartbeat.c
+    src/transport/runtime.c
 )
 
 set(ENROLL_SRCS

@@ -1,3 +1,6 @@
+#define _DEFAULT_SOURCE
+#define _POSIX_C_SOURCE 200809L
+
 #include <dirent.h>
 #include <errno.h>
 #include <pthread.h>
@@ -8,6 +11,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
+#include <time.h>
 #include <unistd.h>
 
 /* st_dev(userspace OLD: major<<8) → 커널 dev_t(NEW: major<<20) 변환 */
@@ -48,6 +52,31 @@ struct audit_event {
 
 static volatile sig_atomic_t g_running = 1;
 static struct ig_trace_bpf *g_skel = NULL;
+
+static uint64_t timespec_to_ns(const struct timespec *ts)
+{
+    return ((uint64_t)ts->tv_sec * 1000000000ULL) + (uint64_t)ts->tv_nsec;
+}
+
+static time_t monotonic_ns_to_epoch_seconds(uint64_t monotonic_ns)
+{
+    struct timespec realtime_ts;
+    struct timespec monotonic_ts;
+
+    if (clock_gettime(CLOCK_REALTIME, &realtime_ts) == 0 &&
+        clock_gettime(CLOCK_MONOTONIC, &monotonic_ts) == 0) {
+        uint64_t realtime_ns = timespec_to_ns(&realtime_ts);
+        uint64_t current_monotonic_ns = timespec_to_ns(&monotonic_ts);
+
+        if (realtime_ns >= current_monotonic_ns) {
+            uint64_t event_realtime_ns =
+                monotonic_ns + (realtime_ns - current_monotonic_ns);
+            return (time_t)(event_realtime_ns / 1000000000ULL);
+        }
+    }
+
+    return time(NULL);
+}
 
 /* BPF proc_map과 동일 레이아웃 — ig_trace.bpf.c struct ig_proc_entry */
 struct bpf_proc_entry {
@@ -471,11 +500,7 @@ static int handle_audit_event(void *ctx, void *data, size_t data_sz)
         memset(&ev, 0, sizeof(ev));
         ev.type      = op_to_ig_type(e->op_mask);
         ev.source    = IG_SOURCE_EBPF;
-        /* TODO: e->ts_ns는 bpf_ktime_get_ns()(CLOCK_MONOTONIC, 부팅 후 ns)라
-         * 그대로 unix epoch로 캐스팅하면 1970+부팅후초가 됨.
-         * 부팅시각 보정(CLOCK_REALTIME - CLOCK_MONOTONIC) 또는
-         * .bpf.c의 bpf_ktime_get_real_ns() 전환으로 수정 필요. */
-        ev.timestamp = (time_t)(e->ts_ns / 1000000000ULL);
+        ev.timestamp = monotonic_ns_to_epoch_seconds(e->ts_ns);
         ev.pid       = (pid_t)e->pid;
         ev.uid       = (uid_t)e->uid;
         ev.dev       = e->dev;
