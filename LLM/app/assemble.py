@@ -75,6 +75,52 @@ def _apply_incident_classification(incidents: List[Dict], patch: Optional[list])
             incidents[i]["sev"] = sev
 
 
+def _reconcile_mitre(skeleton: Dict) -> None:
+    """AI가 사건에 부여한 기법이 ATT&CK 매트릭스·용어집에서 누락되지 않게 보강.
+    리포트 내부 일관성(사건 카드 ↔ 매트릭스 ↔ 용어집) 확보 — AI가 새로 도입한 기법만
+    해당 전술 컬럼/용어집에 추가하고, 기존 수치(코드 집계값)는 그대로 둔다."""
+    inc_tech: Dict[str, int] = {}
+    for inc in skeleton.get("incidents", []):
+        for t in inc.get("mitre", []):
+            if isinstance(t, str) and t:
+                inc_tech[t] = inc_tech.get(t, 0) + 1
+    if not inc_tech:
+        return
+
+    # 용어집 보강 (없는 기법 추가)
+    glossary = skeleton.setdefault("mitreGlossary", [])
+    seen = {row[0] for row in glossary if row}
+    for t in inc_tech:
+        if t in seen:
+            continue
+        meta = classify.MITRE_GLOSSARY.get(t) or classify.MITRE_GLOSSARY.get(classify.base_id(t))
+        if meta:
+            glossary.append([t, meta[0], meta[1]])
+            seen.add(t)
+    glossary.sort(key=lambda row: row[0])
+
+    # 매트릭스 보강 (없는 기법을 해당 전술 컬럼에 추가)
+    matrix = skeleton.setdefault("attackMatrix", [])
+    col_by_tactic = {col["tactic"]: col for col in matrix}
+    existing = {tech["id"] for col in matrix for tech in col["tech"]}
+    for t, n in inc_tech.items():
+        if t in existing:
+            continue
+        tac_ko, tac_en, _ = classify.tactic_of(t)
+        col = col_by_tactic.get(tac_ko)
+        if col is None:
+            col = {"tactic": tac_ko, "en": tac_en, "tech": []}
+            matrix.append(col)
+            col_by_tactic[tac_ko] = col
+        col["tech"].append({"id": t, "nm": classify.tech_name(t), "n": n})
+        existing.add(t)
+    # 표준 전술 순서 + 컬럼 내 빈도 내림차순 (aggregate 컨벤션 유지)
+    order = {ko: i for i, (ko, _en) in enumerate(classify.TACTIC_ORDER)}
+    matrix.sort(key=lambda col: order.get(col["tactic"], 999))
+    for col in matrix:
+        col["tech"].sort(key=lambda tech: tech["n"], reverse=True)
+
+
 def build_report(req: ReportRequest) -> ReportData:
     skeleton = aggregate.build_skeleton(req)
 
@@ -90,6 +136,7 @@ def build_report(req: ReportRequest) -> ReportData:
         _overlay(skeleton["incidents"], patch.get("incidents"), ["desc", "detail", "finding"])
         # AI 주도 분류(검증 통과분만 반영) + 종합 평가(executiveSummary)
         _apply_incident_classification(skeleton["incidents"], patch.get("incidents"))
+        _reconcile_mitre(skeleton)  # 사건 기법을 매트릭스·용어집과 일치시킴
         es = patch.get("executiveSummary")
         if isinstance(es, str) and es.strip():
             skeleton["executiveSummary"] = es.strip()

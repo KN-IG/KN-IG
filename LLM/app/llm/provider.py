@@ -38,7 +38,8 @@ def _gemini(prompt: str) -> Optional[str]:
         model,
         generation_config={"response_mime_type": "application/json", "temperature": 0.4},
     )
-    resp = gm.generate_content(prompt, request_options={"timeout": 45})
+    # 타임아웃 25s — 재시도 1회와 합쳐도 Backend HTTP 클라이언트(60s) 예산 안에 들도록.
+    resp = gm.generate_content(prompt, request_options={"timeout": 25})
     return (resp.text or "").strip() or None
 
 
@@ -68,18 +69,26 @@ def _openai(prompt: str) -> Optional[str]:
 _PROVIDERS = {"gemini": _gemini, "openai": _openai}
 
 
+_RETRIES = 1  # 일시 오류(네트워크/타임아웃) 흡수용 추가 시도 횟수
+
+
 def generate(prompt: str) -> Optional[str]:
     for name in _order():
         fn = _PROVIDERS.get(name)
         if fn is None:
             continue
-        try:
-            text = fn(prompt)
-            if text:
-                log.info("narrative generated via %s", name)
-                return text
-        except Exception as exc:  # noqa: BLE001 — any provider error → next provider
-            log.warning("provider %s failed: %s", name, exc)
+        for attempt in range(_RETRIES + 1):
+            try:
+                text = fn(prompt)
+                if text:
+                    log.info("narrative generated via %s", name)
+                    return text
+                break  # None(키/SDK 없음) → 재시도 무의미, 다음 provider로
+            except Exception as exc:  # noqa: BLE001 — 오류 시 재시도, 소진하면 다음 provider
+                log.warning(
+                    "provider %s failed (attempt %d/%d): %s",
+                    name, attempt + 1, _RETRIES + 1, exc,
+                )
     return None
 
 
