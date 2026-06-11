@@ -138,7 +138,7 @@ def test_build_report_valid_and_has_template_prose():
     data = build_report(_req())
     assert isinstance(data, ReportData)
     d = data.model_dump()
-    assert len(d) == 15
+    assert len(d) == 16  # 15 + executiveSummary
     assert len(d["findings"]) >= 1 and all(f["title"] and f["body"] for f in d["findings"])
     assert len(d["recs"]) == 4
     assert all(inc["detail"] and inc["finding"] for inc in d["incidents"])
@@ -176,5 +176,5 @@ def test_summary_endpoint_returns_full_contract():
     d = r.json()
     expected = {"days", "blockedBySev", "prevPeriodDaily", "severity", "category", "hosts",
                 "findings", "kpis", "attackMatrix", "killPhases", "campaign", "campaignHosts",
-                "incidents", "recs", "mitreGlossary"}
+                "incidents", "recs", "mitreGlossary", "executiveSummary"}
     assert set(d.keys()) == expected

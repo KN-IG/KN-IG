@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Dict, List, Optional
 
-from . import aggregate
+from . import aggregate, classify
 from .llm import narrative
 from .schemas import ReportData, ReportRequest
 
@@ -40,6 +40,41 @@ def _overlay(items: List[Dict], patch: Optional[list], fields: List[str]) -> Non
                 items[i][f] = val.strip()
 
 
+_SEV_OK = {"Critical", "High", "Medium", "Low"}
+
+
+def _valid_mitre(ids) -> List[str]:
+    """AI가 제안한 기법 ID 중 MITRE 용어집에 존재하는 것만 통과(가짜 ID 차단)."""
+    if not isinstance(ids, list):
+        return []
+    out: List[str] = []
+    for t in ids:
+        if isinstance(t, str) and t.strip() and (
+            classify.MITRE_GLOSSARY.get(t.strip())
+            or classify.MITRE_GLOSSARY.get(classify.base_id(t.strip()))
+        ):
+            out.append(t.strip())
+    return out
+
+
+def _apply_incident_classification(incidents: List[Dict], patch: Optional[list]) -> None:
+    """AI 제안 MITRE/심각도를 검증 후 반영 — 가짜 ID·이상 심각도는 룰 값 유지."""
+    if not isinstance(patch, list):
+        return
+    for entry in patch:
+        if not isinstance(entry, dict):
+            continue
+        i = _as_int(entry.get("index"))
+        if not (0 <= i < len(incidents)):
+            continue
+        mitre = _valid_mitre(entry.get("mitre"))
+        if mitre:
+            incidents[i]["mitre"] = mitre
+        sev = entry.get("sev")
+        if isinstance(sev, str) and sev in _SEV_OK:
+            incidents[i]["sev"] = sev
+
+
 def build_report(req: ReportRequest) -> ReportData:
     skeleton = aggregate.build_skeleton(req)
 
@@ -53,6 +88,11 @@ def build_report(req: ReportRequest) -> ReportData:
         _overlay(skeleton["findings"], patch.get("findings"), ["tag", "title", "body"])
         _overlay(skeleton["recs"], patch.get("recs"), ["title", "body", "link"])
         _overlay(skeleton["incidents"], patch.get("incidents"), ["desc", "detail", "finding"])
+        # AI 주도 분류(검증 통과분만 반영) + 종합 평가(executiveSummary)
+        _apply_incident_classification(skeleton["incidents"], patch.get("incidents"))
+        es = patch.get("executiveSummary")
+        if isinstance(es, str) and es.strip():
+            skeleton["executiveSummary"] = es.strip()
 
     try:
         return ReportData(**skeleton)
