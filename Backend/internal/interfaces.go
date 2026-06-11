@@ -181,6 +181,9 @@ type EventStore interface {
 	SaveEvent(ctx context.Context, payload FileEventPayload) error
 	// QueryEvents : GET /api/events -> 필터 기반 조회
 	QueryEvents(ctx context.Context, filter EventFilter) ([]FileEvent, error)
+	// LoadProcessChains : 이벤트 ID들의 프로세스 계보(file_event_process_chain)를
+	// depth_index 순서대로 일괄 로드. 리포트 인시던트의 PID Chain 표시에 사용.
+	LoadProcessChains(ctx context.Context, eventIDs []int64) (map[int64][]ProcessInfo, error)
 }
 
 // EventPublisher : FILE_EVENT 실시간 SSE 전달 채널

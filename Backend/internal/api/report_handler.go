@@ -61,6 +61,27 @@ func (s *Server) collectReportPayload(c *gin.Context) (gin.H, bool) {
 		return nil, false
 	}
 
+	// 인시던트 PID Chain 표시용 — 계보가 있는 이벤트의 프로세스 체인을 일괄 로드해 부착.
+	// (LLM 서버는 이 Chain을 받아 incidents[].chain으로 펼친다)
+	var chainIDs []int64
+	for _, e := range events {
+		if e.ChainDepth > 0 {
+			chainIDs = append(chainIDs, e.ID)
+		}
+	}
+	if len(chainIDs) > 0 {
+		chains, err := s.eventStore.LoadProcessChains(ctx, chainIDs)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return nil, false
+		}
+		for i := range events {
+			if ch, ok := chains[events[i].ID]; ok {
+				events[i].Chain = ch
+			}
+		}
+	}
+
 	return gin.H{
 		"range":      gin.H{"from": from.Format(time.RFC3339), "to": to.Format(time.RFC3339)},
 		"agents":     agents,
