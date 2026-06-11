@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- 중앙 서버가 평문 HTTP(:8080)로 서비스하므로, macOS ATS의 cleartext 차단을 해제.
+       (HTTPS 도입 전까지의 데모/사내 배포용. 운영 시 TLS 적용을 권장.) -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoads</key>
+    <true/>
+  </dict>
+</dict>
+</plist>
