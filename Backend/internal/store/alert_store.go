@@ -45,6 +45,10 @@ func (s *MySQLAlertStore) ListAlerts(ctx context.Context, f internal.AlertFilter
 		query += " AND created_at >= ?"
 		args = append(args, f.From)
 	}
+	if !f.To.IsZero() {
+		query += " AND created_at <= ?"
+		args = append(args, f.To)
+	}
 
 	query += " ORDER BY created_at DESC"
 

@@ -50,7 +50,7 @@ func (s *Server) collectReportPayload(c *gin.Context) (gin.H, bool) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return nil, false
 	}
-	alerts, err := s.alertStore.ListAlerts(ctx, internal.AlertFilter{From: from, Limit: reportEventLimit})
+	alerts, err := s.alertStore.ListAlerts(ctx, internal.AlertFilter{From: from, To: to, Limit: reportEventLimit})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return nil, false

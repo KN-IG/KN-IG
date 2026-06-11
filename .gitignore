@@ -36,3 +36,4 @@ certs/
 # Claude
 .claude/
 .omc/
+.omx/

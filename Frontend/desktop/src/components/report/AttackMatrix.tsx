@@ -3,7 +3,11 @@
 import type { ReportSummary } from "@/report/reportMockData";
 
 export function AttackMatrix({ matrix }: { matrix: ReportSummary["attackMatrix"] }) {
-  const maxN = Math.max(...matrix.flatMap((c) => c.tech.map((t) => t.n)));
+  const maxN = Math.max(1, ...matrix.flatMap((c) => c.tech.map((t) => t.n)));
+
+  if (matrix.length === 0) {
+    return <div className="empty">관측된 MITRE ATT&amp;CK 기법이 없습니다.</div>;
+  }
 
   return (
     <div className="matrix">

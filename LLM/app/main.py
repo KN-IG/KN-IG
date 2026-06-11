@@ -29,7 +29,12 @@ app = FastAPI(title="KN-IG LLM Server", version="1.0.0")
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "llm_provider_configured": provider.available()}
+    return {
+        "status": "ok",
+        "llm_provider_configured": provider.available(),
+        "provider_order": provider.order(),
+        "configured_providers": provider.configured(),
+    }
 
 
 @app.post("/v1/reports/summary", response_model=ReportData)
@@ -70,9 +75,7 @@ def generate_summary_stream(req: ReportRequest) -> StreamingResponse:
         try:
             patch = narrative.generate(skeleton)
             if patch:
-                assemble._overlay(skeleton["findings"], patch.get("findings"), ["tag", "title", "body"])
-                assemble._overlay(skeleton["recs"], patch.get("recs"), ["title", "body", "link"])
-                assemble._overlay(skeleton["incidents"], patch.get("incidents"), ["desc", "detail", "finding"])
+                assemble.apply_patch(skeleton, patch)
         except Exception as exc:  # noqa: BLE001
             log.warning("json patch failed: %s", exc)
 

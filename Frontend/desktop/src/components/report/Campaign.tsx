@@ -1,4 +1,4 @@
-// 06 / INCIDENTS — 캠페인 상관 타임라인. 원본 renderCampaign 이식.
+// 06 / INCIDENTS — 여러 호스트에서 동시에 일어난 시도 타임라인. 원본 renderCampaign 이식.
 import type { ReportSummary } from "@/report/reportMockData";
 
 function sevVar(s: string): string {
@@ -10,7 +10,7 @@ export function Campaign({ data }: { data: ReportSummary }) {
 
   return (
     <div className="campaign">
-      <h3>여러 호스트에서 동시에? — 캠페인 상관</h3>
+      <h3>여러 호스트에서 동시에 일어난 시도</h3>
       <div className="c-sub">
         가로축은 <b>시간</b>, 각 줄은 <b>호스트(컴퓨터)</b>입니다. 점 하나가 차단된 시도이고 색은
         위험도예요. <b>짧은 시간에 여러 호스트로 점이 몰리면</b> 한 공격자의 조직적 시도일 가능성이
@@ -44,7 +44,7 @@ export function Campaign({ data }: { data: ReportSummary }) {
       <div className="camp-legend">
         <span><i style={{ background: "var(--crit)" }} />Critical</span>
         <span><i style={{ background: "var(--low)" }} />Low</span>
-        <span className="camp-hint">↳ 15:01–15:06, 3개 호스트가 6분 내 연쇄 — 조직적 캠페인으로 추정</span>
+        <span className="camp-hint">↳ 짧은 시간에 여러 호스트로 점이 몰리면 한 공격자의 연쇄 시도일 수 있습니다.</span>
       </div>
       <ol className="camp-events">
         {events.map((c, i) => {
