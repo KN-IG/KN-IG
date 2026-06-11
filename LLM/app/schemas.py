@@ -63,6 +63,12 @@ class EventIn(BaseModel):
     # 직속 actor부터 최상위 조상까지의 프로세스 계보 (depth_index 순). 없으면 빈 리스트.
     chain: List[ProcessNodeIn] = Field(default_factory=list, alias="Chain")
 
+    @field_validator("chain", mode="before")
+    @classmethod
+    def _chain_none_to_empty(cls, v):
+        # Go는 빈/nil 슬라이스를 JSON null로 직렬화한다 → 빈 리스트로 취급.
+        return [] if v is None else v
+
 
 class AlertIn(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
