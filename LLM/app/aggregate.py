@@ -251,9 +251,7 @@ def build_skeleton(req: ReportRequest) -> Dict:
     )
     top = ranked[:4]
     incidents = [_incident(ev, agent_name) for ev in top]
-    # 캠페인 상관 섹션 제거 — 과장된 '조직적 캠페인' framing을 리포트에서 뺀다.
-    # (계약 유지를 위해 빈 배열 반환; 콘솔은 비면 섹션을 렌더하지 않는다)
-    campaign, campaign_hosts = [], []
+    campaign, campaign_hosts = _campaign(ranked[:6], agent_name)
 
     # ── MITRE glossary for techniques actually seen ────────────────────
     seen_full: set = set()

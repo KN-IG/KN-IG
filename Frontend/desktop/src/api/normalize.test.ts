@@ -4,7 +4,15 @@ import { normalizeAgent, normalizeEvent, fmtTime } from "./normalize";
 describe("normalizeAgent", () => {
   it("PascalCase raw → camelCase Agent, status 대문자화", () => {
     const a = normalizeAgent({ AgentID: "agent-01", Hostname: "web-prod-01", IP: "10.0.0.5", Status: "online" });
-    expect(a).toEqual({ id: "agent-01", hostname: "web-prod-01", ip: "10.0.0.5", status: "ONLINE" });
+    expect(a).toEqual({
+      id: "agent-01",
+      hostname: "web-prod-01",
+      ip: "10.0.0.5",
+      status: "ONLINE",
+      os: "",
+      kernel: "",
+      guardian: "",
+    });
   });
 
   it("Hostname/IP 부재 시 폴백, Status 부재 시 UNKNOWN", () => {

@@ -6,6 +6,12 @@
 **원칙 — 숫자는 코드, 서술은 LLM**: 모든 수치는 `aggregate.py`에서 결정적 계산(환각 방지), 서술만 LLM(Gemini→GPT 폴백).
 키가 없거나 실패해도 템플릿 서술로 **항상 유효한 리포트**를 반환합니다(오프라인/망분리 안전).
 
+## LLM Provider 운영 가이드
+
+- `PROVIDER_ORDER=gemini,openai`가 기본값이며, 먼저 성공한 provider의 결과를 사용합니다.
+- 구조화 JSON patch 안정성이 더 중요하면 `PROVIDER_ORDER=openai,gemini`로 OpenAI를 1순위에 두는 구성이 적합합니다. 본 서버는 `OPENAI_API_KEY`와 `OPENAI_MODEL`만 설정하면 별도 코드 변경 없이 OpenAI를 사용할 수 있습니다.
+- 어떤 provider를 쓰더라도 수치·차트·MITRE 매트릭스의 기본 집계는 코드가 만들고, LLM은 검증 가능한 서술/분류 보강만 수행합니다. LLM이 제안한 MITRE ID는 서버 용어집에 존재하는 값만 반영됩니다.
+
 ## 구조
 
 ```
@@ -29,8 +35,9 @@ uvicorn app.main:app --port 8088
 
 ## 엔드포인트
 
-- `GET /health` → `{"status":"ok","llm_provider_configured":bool}`
+- `GET /health` → `{"status":"ok","llm_provider_configured":bool,"provider_order":[...],"configured_providers":[...]}`
 - `POST /v1/reports/summary` ← `{range, agents, events, prevEvents, alerts}` → report `DATA` JSON
+- `POST /v1/reports/summary/stream` → SSE(`skeleton`/`token`/`patch`/`done`)로 실시간 종합 분석 + 최종 report `DATA`
 
 ```bash
 curl -s localhost:8088/health

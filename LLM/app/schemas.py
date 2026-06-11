@@ -59,6 +59,21 @@ class EventIn(BaseModel):
     file_name: str = Field("", alias="FileName")
     pid: int = Field(0, alias="Pid")
     detected_by: str = Field("", alias="DetectedBy")
+    # Go FileEvent는 실제 차단 여부를 Blocked로 전달한다. 과거 payload/test처럼
+    # 필드가 없으면 기존 의미(차단 이벤트)와 호환되도록 True로 둔다.
+    blocked: bool = Field(True, alias="Blocked")
+    actor_pid: int = Field(0, alias="ActorPID")
+    actor_ppid: int = Field(0, alias="ActorPPID")
+    actor_uid: int = Field(0, alias="ActorUID")
+    actor_euid: int = Field(0, alias="ActorEUID")
+    actor_sid: int = Field(0, alias="ActorSID")
+    actor_tty: str = Field("", alias="ActorTTY")
+    actor_comm: str = Field("", alias="ActorComm")
+    actor_exe: str = Field("", alias="ActorExe")
+    actor_cmdline: str = Field("", alias="ActorCmdline")
+    actor_start_time_ns: int = Field(0, alias="ActorStartTimeNS")
+    chain_depth: int = Field(0, alias="ChainDepth")
+    chain_truncated: bool = Field(False, alias="ChainTruncated")
     occurred_at: Optional[datetime] = Field(None, alias="OccurredAt")
     # 직속 actor부터 최상위 조상까지의 프로세스 계보 (depth_index 순). 없으면 빈 리스트.
     chain: List[ProcessNodeIn] = Field(default_factory=list, alias="Chain")
@@ -207,5 +222,5 @@ class ReportData(BaseModel):
     incidents: List[Incident]
     recs: List[Rec]
     mitreGlossary: List[Tuple[str, str, str]]
-    # 스트리밍 모드의 LLM '종합 분석' 내러티브(마크다운). 비스트림 경로에서는 미생성(None).
-    executiveSummary: Optional[str] = None
+    # LLM이 성공하면 AI 내러티브로 보강되고, 실패/쿼터 초과 시에는 근거 기반 템플릿 요약을 유지한다.
+    executiveSummary: str = ""

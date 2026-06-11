@@ -9,7 +9,7 @@ back to the (already valid) skeleton.
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 from . import aggregate, classify
 from .llm import narrative
@@ -43,6 +43,21 @@ def _overlay(items: List[Dict], patch: Optional[list], fields: List[str]) -> Non
 _SEV_OK = {"Critical", "High", "Medium", "Low"}
 
 
+def _dedupe(items: Iterable[str]) -> List[str]:
+    out: List[str] = []
+    seen = set()
+    for item in items:
+        if item and item not in seen:
+            out.append(item)
+            seen.add(item)
+    return out
+
+
+def _kill_for(mitre: List[str]) -> List[int]:
+    kill = sorted({classify.tactic_of(t)[2] for t in mitre if isinstance(t, str)})
+    return kill or [0]
+
+
 def _valid_mitre(ids) -> List[str]:
     """AI가 제안한 기법 ID 중 MITRE 용어집에 존재하는 것만 통과(가짜 ID 차단)."""
     if not isinstance(ids, list):
@@ -69,7 +84,10 @@ def _apply_incident_classification(incidents: List[Dict], patch: Optional[list])
             continue
         mitre = _valid_mitre(entry.get("mitre"))
         if mitre:
-            incidents[i]["mitre"] = mitre
+            # AI가 근거 있는 기법을 추가할 수는 있지만, 경로/PID Chain에서 결정론적으로
+            # 잡힌 기법을 누락시키지는 않는다. 그래야 사건 카드·매트릭스가 증거를 잃지 않는다.
+            incidents[i]["mitre"] = _dedupe([*incidents[i].get("mitre", []), *mitre])
+            incidents[i]["kill"] = _kill_for(incidents[i]["mitre"])
         sev = entry.get("sev")
         if isinstance(sev, str) and sev in _SEV_OK:
             incidents[i]["sev"] = sev
@@ -121,6 +139,22 @@ def _reconcile_mitre(skeleton: Dict) -> None:
         col["tech"].sort(key=lambda tech: tech["n"], reverse=True)
 
 
+def apply_patch(skeleton: Dict, patch: Optional[Dict]) -> Dict:
+    """LLM patch를 검증된 필드에만 반영하고 내부 일관성을 재조정한다."""
+    if not patch:
+        return skeleton
+
+    _overlay(skeleton["findings"], patch.get("findings"), ["tag", "title", "body"])
+    _overlay(skeleton["recs"], patch.get("recs"), ["title", "body", "link"])
+    _overlay(skeleton["incidents"], patch.get("incidents"), ["desc", "detail", "finding"])
+    _apply_incident_classification(skeleton["incidents"], patch.get("incidents"))
+    _reconcile_mitre(skeleton)
+    es = patch.get("executiveSummary")
+    if isinstance(es, str) and es.strip():
+        skeleton["executiveSummary"] = es.strip()
+    return skeleton
+
+
 def build_report(req: ReportRequest) -> ReportData:
     skeleton = aggregate.build_skeleton(req)
 
@@ -130,16 +164,7 @@ def build_report(req: ReportRequest) -> ReportData:
     except Exception as exc:  # noqa: BLE001 — narrative must never break the response
         log.warning("narrative generation raised: %s", exc)
 
-    if patch:
-        _overlay(skeleton["findings"], patch.get("findings"), ["tag", "title", "body"])
-        _overlay(skeleton["recs"], patch.get("recs"), ["title", "body", "link"])
-        _overlay(skeleton["incidents"], patch.get("incidents"), ["desc", "detail", "finding"])
-        # AI 주도 분류(검증 통과분만 반영) + 종합 평가(executiveSummary)
-        _apply_incident_classification(skeleton["incidents"], patch.get("incidents"))
-        _reconcile_mitre(skeleton)  # 사건 기법을 매트릭스·용어집과 일치시킴
-        es = patch.get("executiveSummary")
-        if isinstance(es, str) and es.strip():
-            skeleton["executiveSummary"] = es.strip()
+    apply_patch(skeleton, patch)
 
     try:
         return ReportData(**skeleton)

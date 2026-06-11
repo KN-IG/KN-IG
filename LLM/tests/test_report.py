@@ -28,12 +28,14 @@ def _force_template(monkeypatch):
     monkeypatch.setattr("app.llm.narrative.generate", lambda skeleton: None)
 
 
-def _ev(eid, agent, etype, path, when, pid=0):
-    return {
+def _ev(eid, agent, etype, path, when, pid=0, **extra):
+    data = {
         "ID": eid, "AgentID": agent, "EventType": etype, "FilePath": path,
         "FileName": path.rsplit("/", 1)[-1], "Pid": pid, "DetectedBy": "ebpf",
         "OccurredAt": when,
     }
+    data.update(extra)
+    return data
 
 
 def _req(**over):
@@ -77,6 +79,7 @@ def test_pascalcase_aliases_parse():
         ("/etc/sudoers.d/x", "Critical"),
         ("/var/log/audit/audit.log", "High"),
         ("/etc/crontab", "High"),
+        ("/etc/systemd/system/node-healthcheck.service", "High"),
         ("/tmp/.x", "Medium"),
         ("/some/unknown/path", "Medium"),  # default profile
     ],
@@ -127,8 +130,67 @@ def test_glossary_only_for_seen_techniques():
     d = build_skeleton(_req())
     seen = set()
     for ev in _req().events:
-        seen.update(classify.classify(ev.file_path).mitre)
+        seen.update(tech["id"] for col in d["attackMatrix"] for tech in col["tech"])
     assert {g[0] for g in d["mitreGlossary"]}.issubset(seen)
+
+
+def test_blocked_flag_drives_blocked_and_unblocked_kpis():
+    d = build_skeleton(_req(events=[
+        _ev(1, "a1", "MODIFY", "/etc/shadow", "2026-05-18T15:01:00Z", Blocked=True),
+        _ev(2, "a1", "MODIFY", "/etc/passwd", "2026-05-18T16:01:00Z", Blocked=False),
+    ], alerts=[]))
+    assert d["kpis"][0]["num"] == 2
+    assert d["kpis"][1]["num"] == 1
+    assert d["kpis"][1]["delta"] == "50.0%"
+    assert d["kpis"][2]["num"] == 1
+    assert sum(d["blockedBySev"]["Critical"]) == 1
+
+
+def test_pid_chain_uses_real_chain_and_process_mitre():
+    chain = [
+        {
+            "PID": 1502, "PPID": 1340, "UID": 1000, "EUID": 0, "SID": 1200,
+            "TTY": "pts/2", "Comm": "python3", "Exe": "/usr/bin/python3",
+            "Cmdline": "python3 /tmp/.sysupd.py", "StartTimeNS": 1,
+        },
+        {
+            "PID": 1340, "PPID": 812, "UID": 1000, "EUID": 1000, "SID": 1200,
+            "TTY": "pts/2", "Comm": "bash", "Exe": "/bin/bash",
+            "Cmdline": "bash", "StartTimeNS": 1,
+        },
+        {
+            "PID": 812, "PPID": 1, "UID": 0, "EUID": 0, "SID": 812,
+            "TTY": "", "Comm": "sshd", "Exe": "/usr/sbin/sshd",
+            "Cmdline": "/usr/sbin/sshd -D", "StartTimeNS": 1,
+        },
+    ]
+    d = build_skeleton(_req(events=[
+        _ev(1, "a1", "MODIFY", "/etc/shadow", "2026-05-18T15:01:00Z", 1502,
+            ChainDepth=3, Chain=chain),
+    ], alerts=[]))
+    inc = d["incidents"][0]
+    assert [n["name"] for n in inc["chain"][:3]] == ["sshd", "bash", "python3"]
+    assert inc["chain"][-1]["blocked"] is True
+    assert "T1548.003" in inc["mitre"]  # uid 1000 → euid 0 / sudo-like privilege escalation evidence
+    assert "T1078" in inc["mitre"]      # sshd/pts remote session evidence
+    matrix_ids = {tech["id"] for col in d["attackMatrix"] for tech in col["tech"]}
+    assert {"T1003.008", "T1548.003", "T1078"}.issubset(matrix_ids)
+
+
+def test_actor_fields_are_used_when_full_chain_missing():
+    d = build_skeleton(_req(events=[
+        _ev(
+            1, "a1", "DELETE", "/var/log/audit/audit.log", "2026-05-18T15:01:00Z", 2200,
+            ActorPID=2200, ActorPPID=1340, ActorUID=1000, ActorEUID=0,
+            ActorTTY="pts/1", ActorComm="sudo", ActorExe="/usr/bin/sudo", ActorCmdline="sudo rm audit.log",
+            ChainDepth=0, Chain=None,
+        ),
+    ], alerts=[]))
+    chain = d["incidents"][0]["chain"]
+    assert len(chain) == 2
+    assert chain[0]["name"] == "sudo"
+    assert chain[0]["esc"] is True
+    assert chain[1]["exe"].startswith("unlink()")
 
 
 # ── assembly + fallback ────────────────────────────────────────────────
@@ -139,9 +201,26 @@ def test_build_report_valid_and_has_template_prose():
     assert isinstance(data, ReportData)
     d = data.model_dump()
     assert len(d) == 16  # 15 + executiveSummary
+    assert d["executiveSummary"]
+    assert "종합 분석" in d["executiveSummary"]
     assert len(d["findings"]) >= 1 and all(f["title"] and f["body"] for f in d["findings"])
     assert len(d["recs"]) == 4
     assert all(inc["detail"] and inc["finding"] for inc in d["incidents"])
+
+
+def test_llm_patch_adds_valid_mitre_without_dropping_grounded_ids(monkeypatch):
+    monkeypatch.setattr("app.llm.narrative.generate", lambda skeleton: {
+        "incidents": [{"index": 0, "mitre": ["T1548.003"], "sev": "High"}],
+        "executiveSummary": "## 요약\n근거 기반 보강",
+    })
+    data = build_report(_req(events=[
+        _ev(1, "a1", "MODIFY", "/etc/shadow", "2026-05-18T15:01:00Z"),
+    ], alerts=[]))
+    inc = data.model_dump()["incidents"][0]
+    assert "T1003.008" in inc["mitre"]  # 경로 기반 기존 근거 유지
+    assert "T1548.003" in inc["mitre"]  # AI가 제안한 유효 기법 추가
+    matrix_ids = {tech["id"] for col in data.model_dump()["attackMatrix"] for tech in col["tech"]}
+    assert "T1548.003" in matrix_ids
 
 
 def test_empty_input_is_valid_report():
@@ -149,6 +228,7 @@ def test_empty_input_is_valid_report():
     d = data.model_dump()
     assert sum(d["severity"].values()) == 0
     assert d["incidents"] == [] and d["campaign"] == []
+    assert d["executiveSummary"]
     assert len(d["days"]) >= 1  # still a valid time axis
 
 

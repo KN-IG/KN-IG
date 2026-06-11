@@ -1,16 +1,12 @@
 // 주간 종합 무결성 리포트.
 // CSS는 reportV2.css(.report-v2 스코프), 차트는 chart.js. 외부 의존/런타임 fetch 없음(콘솔 내장).
 //
-// 흐름: [생성 전] HERO + 생성 패널(기간·생성방식·생성버튼)
-//       → [생성] 섹션 순차 등장(연출) → [완료] 전체 표시 + 다시 생성/PDF
-//
-// 생성 방식(renderMode):
-//   - anim   : 완성된 리포트를 섹션별로 부드럽게 순차 노출(프론트 연출).
-//   - stream : LLM 종합 분석 토큰을 실시간 표시하고, 최종 JSON patch를 반영.
+// 흐름: [생성 전] HERO + 생성 패널(기간·생성버튼)
+//       → [생성] 데이터 확보 후 섹션 순차 등장 → [완료] 전체 표시 + 다시 생성/PDF
 //
 // 섹션: 01 KEY FINDINGS · 02 OVERVIEW(KPI) · 03 TREND · 04 SEVERITY&TARGETS
 //       · 05 MITRE ATT&CK · 06 INCIDENTS · 07 ACTIONS · 08 REFERENCES
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import "./reportV2.css";
 import { MOCK_REPORT, type ReportSummary } from "@/report/reportMockData";
 import { apiFetch } from "@/api/client";
@@ -21,6 +17,7 @@ import { KeyFindings } from "./KeyFindings";
 import { Kpis } from "./Kpis";
 import { TimelineChart, SeverityChart, CategoryChart } from "./ReportCharts";
 import { AttackMatrix } from "./AttackMatrix";
+import { Campaign } from "./Campaign";
 import { Incidents } from "./Incidents";
 import { Recs } from "./Recs";
 import { Refs } from "./Refs";
@@ -40,7 +37,6 @@ function summarize(d: ReportSummary) {
 }
 
 export type RangeMode = "since" | "7d" | "custom";
-export type RenderMode = "anim" | "stream";
 
 // 등장 섹션 수(01~08). reveal 인덱스 상한.
 const SECTION_COUNT = 8;
@@ -68,42 +64,6 @@ function rangeToDates(range: RangeMode, fromStr: string, toStr: string): { from:
   const to = new Date();
   const from = new Date(Date.now() - days * 86_400_000);
   return { from: from.toISOString(), to: to.toISOString() };
-}
-
-function fmtDateLabel(iso: string): string {
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function selectedRangeLabel(range: RangeMode, fromStr: string, toStr: string): string {
-  const { from, to } = rangeToDates(range, fromStr, toStr);
-  return `${fmtDateLabel(from)} – ${fmtDateLabel(to)}`;
-}
-
-function overallRisk(sev: ReportSummary["severity"]): { label: string; color: string } {
-  if (sev.Critical > 0) return { label: "CRITICAL", color: "var(--crit)" };
-  if (sev.High > 0) return { label: "HIGH", color: "var(--high)" };
-  if (sev.Medium > 0) return { label: "MEDIUM", color: "var(--med)" };
-  if (sev.Low > 0) return { label: "LOW", color: "var(--low)" };
-  return { label: "NONE", color: "var(--ink-faint)" };
-}
-
-function reportInsights(d: ReportSummary) {
-  const daily = d.days.map((day, i) => ({
-    day,
-    n: (d.blockedBySev.Critical[i] ?? 0) + (d.blockedBySev.High[i] ?? 0) + (d.blockedBySev.Medium[i] ?? 0) + (d.blockedBySev.Low[i] ?? 0),
-  }));
-  const peak = daily.reduce((best, cur) => (cur.n > best.n ? cur : best), daily[0] ?? { day: "—", n: 0 });
-  const avgBase = daily.filter((x) => x.day !== peak.day);
-  const avg = avgBase.length ? avgBase.reduce((sum, x) => sum + x.n, 0) / avgBase.length : peak.n;
-  const peakRatio = avg > 0 ? Math.max(1, Math.round((peak.n / avg) * 10) / 10) : 1;
-  const sevTotal = d.severity.Critical + d.severity.High + d.severity.Medium + d.severity.Low;
-  const highPct = sevTotal ? Math.round(((d.severity.Critical + d.severity.High) / sevTotal) * 100) : 0;
-  const topCat = d.category[0]?.[0] ?? "관측 자산 없음";
-  const topCats = d.category.slice(0, 3).map(([name]) => name).join(" · ") || "관측 자산 없음";
-
-  return { peak, peakRatio, highPct, topCat, topCats };
 }
 
 // mock 모드 동적 파생 — 기간(일수)에 비례해 데이터를 스케일하고 차트 일자축을 재생성한다.
@@ -172,172 +132,51 @@ export function ReportV2() {
   const [range, setRange] = useState<RangeMode>("since");
   const [from, setFrom] = useState("2026-05-14");
   const [to, setTo] = useState("2026-05-21");
-  const [renderMode, setRenderMode] = useState<RenderMode>("anim");
   const [phase, setPhase] = useState<Phase>("idle");
   const [revealed, setRevealed] = useState(0);
   const [liveError, setLiveError] = useState<string | null>(null);
-  const [narrative, setNarrative] = useState(""); // 스트리밍 '종합 분석' 누적 텍스트
-  const abortRef = useRef<AbortController | null>(null);
-  const simRef = useRef<number | null>(null);
 
   const d = useMemo(
     () => (config.useMock ? deriveReport(base, range, from, to) : base),
     [base, range, from, to],
   );
   const s = summarize(d);
-  const risk = overallRisk(d.severity);
-  const rangeLabel = selectedRangeLabel(range, from, to);
-  const insights = reportInsights(d);
 
-  // 진행 중 스트림/시뮬 정리.
-  function stopStreaming() {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    if (simRef.current !== null) {
-      window.clearTimeout(simRef.current);
-      simRef.current = null;
-    }
-  }
-
-  // SSE 프레임(event:/data:) 1개 처리.
-  function handleFrame(frame: string) {
-    let event = "message";
-    let data = "";
-    for (const line of frame.split("\n")) {
-      if (line.startsWith("event:")) event = line.slice(6).trim();
-      else if (line.startsWith("data:")) data += line.slice(5).replace(/^ /, "");
-    }
-    if (!data) return;
-    let payload: unknown;
-    try {
-      payload = JSON.parse(data);
-    } catch {
-      return;
-    }
-    if (event === "skeleton" || event === "patch") {
-      const p = payload as Partial<ReportSummary>;
-      if (Array.isArray(p.days)) {
-        setBase(p as ReportSummary);
-        if (event === "patch" && p.executiveSummary) {
-          setNarrative((prev) => prev || p.executiveSummary || "");
-        }
-      }
-    } else if (event === "token") {
-      const t = (payload as { t?: string }).t ?? "";
-      if (t) setNarrative((prev) => prev + t);
-    }
-  }
-
-  // 실서버 SSE 소비 — skeleton/token/patch/done을 순차 처리.
-  async function consumeStream() {
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-    const { from: f, to: t } = rangeToDates(range, from, to);
-    const url = `/api/reports/summary/stream?from=${encodeURIComponent(f)}&to=${encodeURIComponent(t)}`;
-    try {
-      const res = await apiFetch(url, {
-        method: "POST",
-        headers: { Accept: "text/event-stream" },
-        signal: ctrl.signal,
-      });
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error("스트림 본문 없음");
-      const decoder = new TextDecoder();
-      let buf = "";
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        let idx: number;
-        while ((idx = buf.indexOf("\n\n")) >= 0) {
-          handleFrame(buf.slice(0, idx));
-          buf = buf.slice(idx + 2);
-        }
-      }
-    } catch (e) {
-      if ((e as Error).name !== "AbortError") {
-        const msg = e instanceof Error ? e.message : "스트림 실패";
-        console.error("리포트 스트림 실패:", e);
-        setLiveError(msg);
-      }
-    } finally {
-      abortRef.current = null;
-    }
-  }
-
-  // mock 모드 stream 시뮬레이션 — narrative를 타이핑하듯 점진 표시.
-  function simulateNarrative(text: string) {
-    let i = 0;
-    const step = () => {
-      i += 3;
-      setNarrative(text.slice(0, i));
-      if (i < text.length) simRef.current = window.setTimeout(step, 24);
-      else simRef.current = null;
-    };
-    step();
-  }
-
-  // 보고서 생성 — renderMode에 따라 연출/스트리밍 분기.
+  // 보고서 생성 — 데이터 확보 후 섹션을 순차 등장시킨다.
   async function handleGenerate() {
-    stopStreaming();
     setLiveError(null);
     setRevealed(0);
-    setNarrative("");
 
-    if (renderMode === "anim") {
-      // 연출: 데이터 확보 후 섹션 순차 등장
-      if (!config.useMock) {
-        setPhase("loading");
-        try {
-          const r = await loadReportSummary(range, from, to);
-          if (r) {
-            setBase(r);
-            setNarrative(r.executiveSummary ?? "");
-          } else {
-            setLiveError("응답 형식 불일치(days 없음)");
-          }
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : "요청 실패";
-          console.error("리포트 서버 응답 실패 — 임시 데이터로 표시:", e);
-          setLiveError(msg); // 예: "503 Service Unavailable"(LLM 미가동)
-        }
-      } else {
-        setNarrative(MOCK_REPORT.executiveSummary ?? "");
+    if (!config.useMock) {
+      setPhase("loading");
+      try {
+        const r = await loadReportSummary(range, from, to);
+        if (r) setBase(r);
+        else setLiveError("응답 형식 불일치(days 없음)");
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "요청 실패";
+        console.error("리포트 서버 응답 실패 — 임시 데이터로 표시:", e);
+        setLiveError(msg); // 예: "503 Service Unavailable"(LLM 미가동)
       }
-      setPhase("reveal");
-      return;
     }
-
-    // 스트리밍: 구조 즉시 + 내러티브 실시간
     setPhase("reveal");
-    if (config.useMock) {
-      simulateNarrative(MOCK_REPORT.executiveSummary ?? "");
-    } else {
-      void consumeStream();
-    }
   }
 
   function reset() {
-    stopStreaming();
     setPhase("idle");
     setRevealed(0);
-    setNarrative("");
   }
 
-  // 언마운트 시 진행 중 스트림 정리.
-  useEffect(() => stopStreaming, []);
-
-  // 섹션 순차 등장 — renderMode에 따라 속도 차등(stream은 더 촘촘).
+  // 섹션 순차 등장.
   useEffect(() => {
     if (phase !== "reveal") return;
     if (revealed >= SECTION_COUNT) {
       setPhase("done");
       return;
     }
-    const delay = renderMode === "stream" ? 170 : 330;
-    const id = setTimeout(() => setRevealed((c) => c + 1), revealed === 0 ? 60 : delay);
+    const id = setTimeout(() => setRevealed((c) => c + 1), revealed === 0 ? 60 : 330);
     return () => clearTimeout(id);
-  }, [phase, revealed, renderMode]);
+  }, [phase, revealed]);
 
   const generated = phase === "reveal" || phase === "done";
   // i번째 섹션 reveal 클래스.
@@ -374,19 +213,6 @@ export function ReportV2() {
               )}
             </div>
 
-            <div className="gen-row">
-              <span className="gen-lab">생성 방식</span>
-              <div className="seg">
-                <button className={renderMode === "anim" ? "active" : ""} onClick={() => setRenderMode("anim")}>연출</button>
-                <button className={renderMode === "stream" ? "active" : ""} onClick={() => setRenderMode("stream")}>실시간 스트리밍</button>
-              </div>
-              <span className="gen-hint">
-                {renderMode === "anim"
-                  ? "완성된 리포트를 섹션별로 부드럽게 표시합니다."
-                  : "LLM이 생성하는 종합 분석을 실시간으로 표시합니다."}
-              </span>
-            </div>
-
             <button className="btn btn-primary gen-btn" onClick={() => void handleGenerate()} disabled={phase === "loading"}>
               {phase === "loading" ? (
                 <>
@@ -417,18 +243,18 @@ export function ReportV2() {
       <div className="wrap">
         {/* HERO */}
         <header className="hero in">
-          <div className="kicker">무결성 리포트 · {rangeLabel}</div>
+          <div className="kicker">주간 무결성 리포트 · 2026년 5월 3주차</div>
           <h1>
             이번 기간 <b><span className="num">{s.blocked}</span>건</b>의 변조 시도를 차단했습니다
           </h1>
           <p className="lede">
-            KN-IG가 {s.hosts}개 감시 호스트에서 수집한 무결성 이벤트 {s.sevTotal}건을 분석했습니다.
-            차단·미차단 현황, MITRE ATT&amp;CK 매핑, PID Chain 근거를 함께 정리했습니다.
+            KN-IG가 {s.hosts}개 핵심 자산에 대한 무결성 이벤트를 감시했으며, 대부분을 실제 피해가
+            발생하기 전에 차단했습니다. 핵심 내용을 비전문가도 이해할 수 있도록 정리했습니다.
           </p>
           <div className="hero-meta">
-            <span className="chip"><span className="lab">대상 기간</span>{rangeLabel}</span>
+            <span className="chip"><span className="lab">대상 기간</span>2026.05.14 – 05.21</span>
             <span className="chip"><span className="lab">감시 호스트</span>{s.hosts}대</span>
-            <span className="chip sev" style={{ color: risk.color }}><span className="dot" style={{ background: risk.color }} />종합 위험도 {risk.label}</span>
+            <span className="chip sev"><span className="dot" style={{ background: "var(--crit)" }} />종합 위험도 HIGH</span>
             {!config.useMock && liveError && (
               <span className="chip sev" title={`리포트 서버 응답 실패: ${liveError} — LLM(:8088)/백엔드 확인`}>
                 <span className="dot" style={{ background: "var(--high)" }} />임시 데이터 · {liveError}
@@ -439,7 +265,7 @@ export function ReportV2() {
 
         {/* 액션 바 */}
         <div className="range-bar">
-          <div className="range-hint" style={{ marginLeft: 0 }}>분석 대상 <b>{s.attempts}건</b> · 생성 방식 {renderMode === "anim" ? "연출" : "실시간 스트리밍"}</div>
+          <div className="range-hint" style={{ marginLeft: 0 }}>분석 대상 <b>{s.attempts}건</b></div>
           <button className="btn" onClick={reset} style={{ marginLeft: "auto" }}>다시 생성</button>
           <button className="btn btn-primary" onClick={() => void printReport()}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}>
@@ -449,15 +275,15 @@ export function ReportV2() {
           </button>
         </div>
 
-        {/* AI 종합 분석 — 스트리밍 모드에서 LLM 내러티브가 실시간 누적된다. */}
-        {narrative && (
+        {/* AI 종합 분석 — LLM이 집계 데이터를 해석해 작성한 종합 분석. */}
+        {d.executiveSummary && (
           <section className="ai-summary in">
             <div className="sec-head">
               <div className="eyebrow">AI 종합 분석</div>
-              <h2>LLM 종합 분석{phase === "reveal" && <span className="ai-cursor" />}</h2>
+              <h2>LLM 종합 분석</h2>
               <p>LLM이 수집·집계 데이터를 해석해 작성한 종합 분석입니다.</p>
             </div>
-            <div className="card ai-card">{renderNarrative(narrative)}</div>
+            <div className="card ai-card">{renderNarrative(d.executiveSummary)}</div>
           </section>
         )}
 
@@ -472,7 +298,7 @@ export function ReportV2() {
             <p>일자별 차단 위협을 위험 등급별로, 지난 기간과 비교해 보여줍니다.</p>
           </div>
           <div className="card">
-            <h3>{insights.peak.day}, 차단 건수 {insights.peak.n}건{insights.peakRatio > 1 ? ` · 평시 대비 약 ${insights.peakRatio}배` : ""}</h3>
+            <h3>5월 18일, 차단 건수가 평소의 약 3배</h3>
             <div className="c-sub">위험 등급별 누적 · <b>점선=지난 기간 일별 합계</b></div>
             <div className="chart-box"><TimelineChart data={d} /></div>
             <div className="legend">
@@ -494,7 +320,7 @@ export function ReportV2() {
           </div>
           <div className="grid-2">
             <div className="card">
-              <h3>치명적·높음이 전체의 {insights.highPct}%</h3>
+              <h3>치명적·높음이 전체의 43%</h3>
               <div className="c-sub">전체 이벤트 심각도별 분포</div>
               <div className="dough-wrap">
                 <div className="chart-box"><SeverityChart data={d} /></div>
@@ -508,8 +334,8 @@ export function ReportV2() {
               </div>
             </div>
             <div className="card">
-              <h3>상위 표적: {insights.topCat}</h3>
-              <div className="c-sub">상위 자산: {insights.topCats}</div>
+              <h3>상위 3종이 자격증명·권한·원격접속</h3>
+              <div className="c-sub">표적 자산 종류별 건수 (치명적 자산 강조)</div>
               <div className="chart-box"><CategoryChart data={d} /></div>
             </div>
           </div>
@@ -535,8 +361,9 @@ export function ReportV2() {
           <div className="sec-head">
             <div className="eyebrow">06 / INCIDENTS</div>
             <h2>주목할 사건</h2>
-            <p>가장 위험했던 개별 사건입니다. 항목을 펼치면 킬체인·프로세스 계보(PID Chain)가 표시됩니다.</p>
+            <p>가장 위험했던 개별 사건과, 비슷한 시각에 여러 호스트에서 함께 일어난 시도 흐름입니다. 항목을 펼치면 킬체인·프로세스 계보(PID Chain)가 표시됩니다.</p>
           </div>
+          <Campaign data={d} />
           <Incidents data={d} />
           <p className="note">※ PID Chain 추적 항목: 프로세스명·PID/부모PID·실행파일·명령행·실행 사용자(uid→euid 권한 상승)·tty·세션. 원격 출처 IP는 현재 수집 항목에 포함되지 않으며, 원격 세션 여부는 tty(pts/*)로 간접 확인합니다.</p>
         </section>
@@ -565,7 +392,7 @@ export function ReportV2() {
             KN-IG 무결성 가드 · 자동 생성 리포트<br />
             본 리포트는 AI 분석 결과를 포함하며 참고용입니다. 최종 판단은 보안 담당자가 수행해야 합니다.
           </div>
-          <div>KN-IG Console · {config.useMock || liveError ? "mock/임시 데이터" : "실데이터"}</div>
+          <div>KN-IG Console · mock data</div>
         </footer>
       </div>
     </div>

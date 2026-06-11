@@ -214,6 +214,7 @@ type AlertFilter struct {
 	Severity string
 	Resolved *bool // nil=전체, true=해결, false=미해결
 	From     time.Time
+	To       time.Time
 	Limit    int
 	Offset   int
 }

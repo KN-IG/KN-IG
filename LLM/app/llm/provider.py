@@ -20,6 +20,25 @@ def _order() -> List[str]:
     return [p.strip().lower() for p in raw.split(",") if p.strip()]
 
 
+def order() -> List[str]:
+    """Configured provider preference order, without exposing API keys."""
+    return _order()
+
+
+def configured() -> List[str]:
+    """Providers that have an API key configured, in preference order."""
+    keys = {
+        "gemini": "GEMINI_API_KEY",
+        "openai": "OPENAI_API_KEY",
+    }
+    out: List[str] = []
+    for name in _order():
+        key = keys.get(name)
+        if key and os.getenv(key):
+            out.append(name)
+    return out
+
+
 def _gemini(prompt: str) -> Optional[str]:
     key = os.getenv("GEMINI_API_KEY")
     if not key:
@@ -93,7 +112,7 @@ def generate(prompt: str) -> Optional[str]:
 
 
 def available() -> bool:
-    return bool(os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY"))
+    return bool(configured())
 
 
 # ──────────────────────────── streaming (free prose) ────────────────────────

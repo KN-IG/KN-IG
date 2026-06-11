@@ -30,7 +30,7 @@ function ChainNodeView({ n }: { n: ChainNode }) {
           <span className="cname">{n.name}</span>
           <span className="cpid">PID {n.pid} · PPID {n.ppid}</span>
         </div>
-        <div className="cexe">{n.cmd ?? n.exe}</div>
+        <div className="cexe">{n.cmd || n.exe}</div>
         <div className="cmeta">
           <span className={`ctag ${n.esc ? "esc" : ""}`}>user {n.user}</span>
           {n.tty && <span className="ctag">tty {n.tty}</span>}
@@ -75,7 +75,11 @@ function IncidentItem({ x, idx, phases }: { x: Incident; idx: number; phases: st
             </svg>
             공격 추적 (PID Chain)
           </div>
-          <div className="chain">{x.chain.map((n, i) => <ChainNodeView key={i} n={n} />)}</div>
+          <div className="chain">
+            {x.chain.length > 0
+              ? x.chain.map((n, i) => <ChainNodeView key={i} n={n} />)
+              : <div className="empty">PID Chain 데이터가 수집되지 않았습니다.</div>}
+          </div>
           <div className="inc-finding"><b>핵심 발견</b> {x.finding}</div>
         </div>
       </div>
@@ -84,6 +88,10 @@ function IncidentItem({ x, idx, phases }: { x: Incident; idx: number; phases: st
 }
 
 export function Incidents({ data }: { data: ReportSummary }) {
+  if (data.incidents.length === 0) {
+    return <div className="empty">선택한 기간에 주목할 사건이 없습니다.</div>;
+  }
+
   return (
     <div className="incidents">
       {data.incidents.map((x, i) => (
