@@ -35,6 +35,21 @@ class AgentIn(BaseModel):
     status: str = Field("", alias="Status")
 
 
+class ProcessNodeIn(BaseModel):
+    """Go internal.ProcessInfo (file_event_process_chain) — PascalCase 필드명 alias."""
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+    pid: int = Field(0, alias="PID")
+    ppid: int = Field(0, alias="PPID")
+    uid: int = Field(0, alias="UID")
+    euid: int = Field(0, alias="EUID")
+    sid: int = Field(0, alias="SID")
+    tty: str = Field("", alias="TTY")
+    comm: str = Field("", alias="Comm")
+    exe: str = Field("", alias="Exe")
+    cmdline: str = Field("", alias="Cmdline")
+    start_time_ns: int = Field(0, alias="StartTimeNS")
+
+
 class EventIn(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
     id: int = Field(0, alias="ID")
@@ -45,6 +60,8 @@ class EventIn(BaseModel):
     pid: int = Field(0, alias="Pid")
     detected_by: str = Field("", alias="DetectedBy")
     occurred_at: Optional[datetime] = Field(None, alias="OccurredAt")
+    # 직속 actor부터 최상위 조상까지의 프로세스 계보 (depth_index 순). 없으면 빈 리스트.
+    chain: List[ProcessNodeIn] = Field(default_factory=list, alias="Chain")
 
 
 class AlertIn(BaseModel):

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/KN-IG/KN-IG/Backend/internal"
@@ -141,4 +142,47 @@ func (s *MySQLEventStore) QueryEvents(ctx context.Context, f internal.EventFilte
 		events = append(events, e)
 	}
 	return events, nil
+}
+
+// LoadProcessChains : 주어진 이벤트 ID들의 프로세스 계보를 file_event_process_chain에서
+// depth_index 순서(0=직속 actor … N=최상위 조상)로 일괄 조회해 event_id별로 묶어 반환한다.
+func (s *MySQLEventStore) LoadProcessChains(ctx context.Context, eventIDs []int64) (map[int64][]internal.ProcessInfo, error) {
+	out := make(map[int64][]internal.ProcessInfo)
+	if len(eventIDs) == 0 {
+		return out, nil
+	}
+
+	placeholders := make([]string, len(eventIDs))
+	args := make([]interface{}, len(eventIDs))
+	for i, id := range eventIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	query := `
+		SELECT event_id, pid, ppid, uid, euid, sid, tty, comm, exe, cmdline, start_time_ns
+		FROM file_event_process_chain
+		WHERE event_id IN (` + strings.Join(placeholders, ",") + `)
+		ORDER BY event_id, depth_index`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var eventID int64
+		var p internal.ProcessInfo
+		var cmdline sql.NullString
+		if err := rows.Scan(
+			&eventID, &p.PID, &p.PPID, &p.UID, &p.EUID, &p.SID,
+			&p.TTY, &p.Comm, &p.Exe, &cmdline, &p.StartTimeNS,
+		); err != nil {
+			return nil, err
+		}
+		p.Cmdline = cmdline.String
+		out[eventID] = append(out[eventID], p)
+	}
+	return out, rows.Err()
 }

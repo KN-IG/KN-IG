@@ -211,11 +211,65 @@ def _op(event_type: str) -> Tuple[str, str]:
     return "write", "수정 시도"
 
 
-def _incident(ev, agent_name: Dict[str, str]) -> Dict:
-    prof = classify.classify(ev.file_path)
-    syscall, attempt = _op(ev.event_type)
-    kill = sorted({classify.tactic_of(t)[2] for t in prof.mitre})
-    chain = [{
+def _fmt_user(uid: int, euid: int) -> Tuple[str, bool]:
+    """user 표시 문자열과 권한 상승(esc) 여부."""
+    esc = uid != euid
+    if esc:
+        return f"uid {uid} → euid {euid}", True
+    if uid == 0:
+        return "root (uid 0)", False
+    return f"uid {uid}", False
+
+
+def _node_note(comm: str, tty: str, esc: bool, uid: int, euid: int) -> str:
+    """프로세스 노드에 대한 짧은 자동 설명."""
+    parts: List[str] = []
+    if "sshd" in comm:
+        parts.append("원격 SSH 데몬")
+    if tty.startswith("pts"):
+        parts.append(f"원격 세션({tty})")
+    if esc:
+        parts.append(f"실행 중 권한 상승 uid {uid}→{euid}")
+    return " · ".join(parts)
+
+
+def _build_chain(ev, prof, syscall: str) -> List[Dict]:
+    """실제 프로세스 계보(ev.chain)를 리포트 ChainNode 배열로 변환한다.
+    저장 순서는 depth_index 0=직속 actor … N=최상위 조상이므로, 공격 진행이
+    위→아래로 읽히도록 조상부터(역순) 펼치고 마지막에 차단된 시스템 콜 노드를 붙인다.
+    체인 데이터가 없으면 단일 합성 노드로 폴백한다(기존 동작)."""
+    nodes = list(ev.chain or [])
+    if nodes:
+        actor = nodes[0]  # depth_index 0 = 실제 시도를 수행한 직속 프로세스
+        chain: List[Dict] = []
+        for i, n in enumerate(reversed(nodes)):
+            user, esc = _fmt_user(n.uid, n.euid)
+            chain.append({
+                "step": i + 1,
+                "name": n.comm or "process",
+                "pid": n.pid,
+                "ppid": n.ppid,
+                "exe": n.exe,
+                "cmd": n.cmdline or "",
+                "user": user,
+                "tty": n.tty,
+                "note": _node_note(n.comm, n.tty, esc, n.uid, n.euid),
+                "esc": esc,
+            })
+        actor_user, _ = _fmt_user(actor.uid, actor.euid)
+        chain.append({
+            "step": len(chain) + 1,
+            "name": "차단된 시도",
+            "pid": actor.pid,
+            "ppid": actor.ppid,
+            "exe": f"{syscall}() → {ev.file_path}",
+            "user": actor_user,
+            "note": "무결성 가드가 시스템 콜 진입 단계에서 차단",
+            "blocked": True,
+            "tech": prof.mitre[0] if prof.mitre else "",
+        })
+        return chain
+    return [{
         "step": 1,
         "name": "차단된 시도",
         "pid": ev.pid or 0,
@@ -226,6 +280,13 @@ def _incident(ev, agent_name: Dict[str, str]) -> Dict:
         "blocked": True,
         "tech": prof.mitre[0] if prof.mitre else "",
     }]
+
+
+def _incident(ev, agent_name: Dict[str, str]) -> Dict:
+    prof = classify.classify(ev.file_path)
+    syscall, attempt = _op(ev.event_type)
+    kill = sorted({classify.tactic_of(t)[2] for t in prof.mitre})
+    chain = _build_chain(ev, prof, syscall)
     time_str = ev.occurred_at.strftime("%m-%d %H:%M") if ev.occurred_at else ""
     return {
         "sev": prof.severity,
