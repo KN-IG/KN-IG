@@ -57,11 +57,11 @@ class Scenario:
 
 
 MANAGED_AGENTS = [
-    Agent("hmi-line1-01", "HMI-LINE1-01", "10.20.10.11", "Ubuntu 22.04", "lkm"),
-    Agent("ews-line1-02", "EWS-LINE1-02", "10.20.10.12", "Ubuntu 22.04", "ebpf"),
-    Agent("hist-core-03", "HIST-CORE-03", "10.20.10.13", "Rocky Linux 9", "lkm"),
-    Agent("jump-ops-01", "JUMP-OPS-01", "10.20.10.20", "Ubuntu 24.04", "ebpf"),
-    Agent("web-ops-01", "WEB-OPS-01", "10.20.10.30", "Debian 12", "lkm"),
+    Agent("hmi-line1-01", "HMI-LINE1-01", "192.168.10.11", "Ubuntu 22.04", "lkm", "online"),
+    Agent("ews-line1-02", "EWS-LINE1-02", "192.168.10.12", "Ubuntu 22.04", "ebpf", "online"),
+    Agent("hist-core-03", "HIST-CORE-03", "192.168.10.13", "Rocky Linux 9", "lkm", "offline"),
+    Agent("jump-ops-01", "JUMP-OPS-01", "192.168.20.20", "Ubuntu 24.04", "ebpf", "online"),
+    Agent("web-ops-01", "WEB-OPS-01", "192.168.30.30", "Debian 12", "lkm", "offline"),
 ]
 
 
